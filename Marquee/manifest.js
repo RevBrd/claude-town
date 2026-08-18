@@ -2,7 +2,7 @@
 window.MARQUEE_MANIFEST = {
   "gamesRoot": "C:\\Users\\fonte\\Projects\\Games",
   "gamesRootRelative": "../../Games",
-  "generated": "2026-08-18T00:05:03.663Z",
+  "generated": "2026-08-18T00:43:50.136Z",
   "games": [
     {
       "folder": "Aethermoor",
@@ -21,7 +21,8 @@ window.MARQUEE_MANIFEST = {
       "bytes": 76797,
       "modified": "2026-08-05T06:24:15.383Z",
       "hasDoc": true,
-      "authoredDefects": null
+      "authoredDefects": null,
+      "billing": "preview"
     },
     {
       "folder": "Afterglow",
@@ -40,7 +41,8 @@ window.MARQUEE_MANIFEST = {
       "bytes": 92658,
       "modified": "2026-08-07T02:27:30.902Z",
       "hasDoc": true,
-      "authoredDefects": null
+      "authoredDefects": null,
+      "billing": "preview"
     },
     {
       "folder": "Arcane Artillery",
@@ -57,7 +59,8 @@ window.MARQUEE_MANIFEST = {
       "bytes": null,
       "modified": null,
       "hasDoc": false,
-      "authoredDefects": null
+      "authoredDefects": null,
+      "billing": null
     },
     {
       "folder": "Asterism",
@@ -78,7 +81,8 @@ window.MARQUEE_MANIFEST = {
       "bytes": 6885,
       "modified": "2026-08-04T00:55:42.841Z",
       "hasDoc": true,
-      "authoredDefects": null
+      "authoredDefects": null,
+      "billing": "feature"
     },
     {
       "folder": "Bao's Big Breakfast",
@@ -97,7 +101,8 @@ window.MARQUEE_MANIFEST = {
       "bytes": 96784,
       "modified": "2026-08-06T23:05:59.533Z",
       "hasDoc": true,
-      "authoredDefects": null
+      "authoredDefects": null,
+      "billing": "feature"
     },
     {
       "folder": "Benthos",
@@ -116,7 +121,8 @@ window.MARQUEE_MANIFEST = {
       "bytes": 32912,
       "modified": "2026-08-05T17:22:18.427Z",
       "hasDoc": false,
-      "authoredDefects": null
+      "authoredDefects": null,
+      "billing": null
     },
     {
       "folder": "Blocks IG",
@@ -135,7 +141,8 @@ window.MARQUEE_MANIFEST = {
       "bytes": 21285,
       "modified": "2026-08-05T17:21:53.004Z",
       "hasDoc": true,
-      "authoredDefects": null
+      "authoredDefects": null,
+      "billing": "feature"
     },
     {
       "folder": "Combat Circuit",
@@ -154,7 +161,8 @@ window.MARQUEE_MANIFEST = {
       "bytes": 63389,
       "modified": "2026-08-03T00:40:32.688Z",
       "hasDoc": true,
-      "authoredDefects": null
+      "authoredDefects": null,
+      "billing": "preview"
     },
     {
       "folder": "DRIFT",
@@ -173,7 +181,8 @@ window.MARQUEE_MANIFEST = {
       "bytes": 65987,
       "modified": "2026-08-04T03:13:08.608Z",
       "hasDoc": true,
-      "authoredDefects": null
+      "authoredDefects": null,
+      "billing": "feature"
     },
     {
       "folder": "Dead Reckoning",
@@ -192,7 +201,8 @@ window.MARQUEE_MANIFEST = {
       "bytes": 35175,
       "modified": "2026-08-05T18:23:38.130Z",
       "hasDoc": true,
-      "authoredDefects": null
+      "authoredDefects": null,
+      "billing": "preview"
     },
     {
       "folder": "Dead Space",
@@ -211,7 +221,8 @@ window.MARQUEE_MANIFEST = {
       "bytes": 77205,
       "modified": "2026-08-05T05:05:41.233Z",
       "hasDoc": true,
-      "authoredDefects": null
+      "authoredDefects": null,
+      "billing": "feature"
     },
     {
       "folder": "GemTD",
@@ -230,7 +241,8 @@ window.MARQUEE_MANIFEST = {
       "bytes": 77707,
       "modified": "2026-08-07T06:59:51.155Z",
       "hasDoc": true,
-      "authoredDefects": null
+      "authoredDefects": null,
+      "billing": "feature"
     },
     {
       "folder": "Grey Zone",
@@ -249,7 +261,8 @@ window.MARQUEE_MANIFEST = {
       "bytes": 52029,
       "modified": "2026-08-07T06:08:23.538Z",
       "hasDoc": true,
-      "authoredDefects": null
+      "authoredDefects": null,
+      "billing": "preview"
     },
     {
       "folder": "Nebula Strike",
@@ -268,7 +281,8 @@ window.MARQUEE_MANIFEST = {
       "bytes": 38403,
       "modified": "2026-08-02T01:57:52.382Z",
       "hasDoc": true,
-      "authoredDefects": null
+      "authoredDefects": null,
+      "billing": null
     },
     {
       "folder": "Oblique",
@@ -287,7 +301,8 @@ window.MARQUEE_MANIFEST = {
       "bytes": 48048,
       "modified": "2026-08-07T22:50:24.864Z",
       "hasDoc": true,
-      "authoredDefects": null
+      "authoredDefects": null,
+      "billing": "preview"
     },
     {
       "folder": "Powerplay",
@@ -306,7 +321,8 @@ window.MARQUEE_MANIFEST = {
       "bytes": 43668,
       "modified": "2026-08-04T04:59:13.415Z",
       "hasDoc": true,
-      "authoredDefects": null
+      "authoredDefects": null,
+      "billing": "preview"
     },
     {
       "folder": "Prompt Defense",
@@ -325,7 +341,8 @@ window.MARQUEE_MANIFEST = {
       "bytes": 44444,
       "modified": "2026-08-05T04:14:56.985Z",
       "hasDoc": true,
-      "authoredDefects": null
+      "authoredDefects": null,
+      "billing": "feature"
     },
     {
       "folder": "Salient",
@@ -345,7 +362,8 @@ window.MARQUEE_MANIFEST = {
       "bytes": null,
       "modified": null,
       "hasDoc": true,
-      "authoredDefects": null
+      "authoredDefects": null,
+      "billing": null
     },
     {
       "folder": "Shadowless",
@@ -364,7 +382,8 @@ window.MARQUEE_MANIFEST = {
       "bytes": 828968,
       "modified": "2026-08-17T04:12:47.895Z",
       "hasDoc": true,
-      "authoredDefects": null
+      "authoredDefects": null,
+      "billing": "feature"
     },
     {
       "folder": "Snek",
@@ -384,7 +403,8 @@ window.MARQUEE_MANIFEST = {
       "bytes": 47542,
       "modified": "2026-08-09T20:19:41.788Z",
       "hasDoc": true,
-      "authoredDefects": false
+      "authoredDefects": false,
+      "billing": "feature"
     },
     {
       "folder": "Ultra Pong!!!!",
@@ -403,7 +423,8 @@ window.MARQUEE_MANIFEST = {
       "bytes": 129227,
       "modified": "2026-08-03T03:43:32.644Z",
       "hasDoc": true,
-      "authoredDefects": null
+      "authoredDefects": null,
+      "billing": "feature"
     },
     {
       "folder": "Untitled",
@@ -420,7 +441,8 @@ window.MARQUEE_MANIFEST = {
       "bytes": null,
       "modified": null,
       "hasDoc": false,
-      "authoredDefects": null
+      "authoredDefects": null,
+      "billing": null
     },
     {
       "folder": "Volley",
@@ -439,7 +461,8 @@ window.MARQUEE_MANIFEST = {
       "bytes": 46819,
       "modified": "2026-08-11T00:15:35.769Z",
       "hasDoc": false,
-      "authoredDefects": null
+      "authoredDefects": null,
+      "billing": null
     }
   ],
   "missingFolders": [],

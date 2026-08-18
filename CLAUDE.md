@@ -42,7 +42,7 @@ shape of file, same shape of hazard, so the rule arrives before the bug this tim
 If you're working here and learn something that future instances in this folder would benefit
 from knowing, feel free to jot it down below or in a separate file. This isn't mandatory — it's
 an open notebook, not a logbook. The bar is "would this actually help someone coming in cold on
-a different miscellaneous task," not "did I do something today."
+a different miscellaneous task". This bar only applies to the main document. Log books, credits, and records about what you did are perfectly fine if they exist independently from this.
 
 ## Backup
 
@@ -56,4 +56,4 @@ Desktop. No manual steps required — it runs in the background. Set up August 2
 
 
 
-(Credit for this document - Opus 4.6 8/9/26)
+(Credit for this document - Opus 4.6 CTown-1 8/9/26)

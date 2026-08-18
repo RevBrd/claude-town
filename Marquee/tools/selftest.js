@@ -41,6 +41,7 @@ const DERIVE_SRC = path.join(__dirname, 'derive.js');
 // message says what broke rather than which game broke.
 // ---------------------------------------------------------------------------
 function buildFixture(root) {
+  const NL = String.fromCharCode(10);
   const html = (title) => `<!doctype html>\n<html><head><title>${title}</title></head>\n<body>x</body></html>\n`;
   const mk = (rel, body) => {
     const p = path.join(root, rel);
@@ -117,6 +118,21 @@ function buildFixture(root) {
   mk('Combined/b.html', html('B'));
   mk('Combined/CLAUDE.md', '# Combined\n\n<!-- marquee: play=b.html defects=authored -->\n');
 
+  // Two markers in ONE doc, far apart: the entry-point declaration beside the
+  // prose explaining it, the editorial one at the bottom. Reading only the
+  // first was a real bug, found while adding billing.
+  mk('TwoMarkers/game.html', html('TWO MARKERS'));
+  mk('TwoMarkers/CLAUDE.md',
+     '# TwoMarkers' + NL + NL + '<!-- marquee: play=game.html -->' + NL +
+     NL + 'A paragraph of prose in between.' + NL + NL +
+     '<!-- marquee: billing=feature -->' + NL);
+
+  mk('Preview/game.html', html('PREVIEW'));
+  mk('Preview/CLAUDE.md', '# Preview' + NL + NL + '<!-- marquee: billing=preview -->' + NL);
+
+  mk('Commas/game.html', html('COMMAS'));
+  mk('Commas/CLAUDE.md', '# Commas' + NL + NL + '<!-- marquee: billing=preview, defects=authored -->' + NL);
+
   // No folder for Ghost/ — that is the point of Ghost.
 }
 
@@ -180,6 +196,14 @@ function assertions(derive, root) {
   // --- two keys in one comment -------------------------------------------
   is('combined declaration: play',        by('Combined').entry, 'b.html');
   is('combined declaration: defects',     by('Combined').authoredDefects, true);
+
+  // --- more than one marker per doc ---------------------------------------
+  is('first marker is honoured',        by('TwoMarkers').entry, 'game.html');
+  is('second marker is honoured too',   by('TwoMarkers').billing, 'feature');
+  is('billing preview reads back',      by('Preview').billing, 'preview');
+  is('comma-separated keys split',      by('Commas').billing, 'preview');
+  is('comma-separated second key',      by('Commas').authoredDefects, true);
+  is('undeclared billing is null',      by('Solo').billing, null);
 
   // --- incidental ---------------------------------------------------------
   is('title is pulled from the entry',    by('Decoyed').title, 'THE REAL ONE');
@@ -252,6 +276,18 @@ const MUTANTS = [
     find: '      display: row ? row.display : folder,',
     repl: '      display: folder,',
     expect: 'display name comes from catalog',
+  },
+  {
+    name: 'M10 only the first marker in a doc is read',
+    find: '  for (const m of docText.matchAll(TUNE.DECLARATION)) {',
+    repl: '  for (const m of [...docText.matchAll(TUNE.DECLARATION)].slice(0, 1)) {',
+    expect: 'second marker is honoured too',
+  },
+  {
+    name: 'M11 billing=preview silently dropped',
+    find: "             : declaration.billing === 'preview' ? 'preview'",
+    repl: "             : false ? 'preview'",
+    expect: 'billing preview reads back',
   },
 ];
 

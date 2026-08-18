@@ -148,23 +148,42 @@
   }
 
   /* --- the bezel ------------------------------------------------------- */
-  #stage{position:fixed;inset:0;background:var(--ink);z-index:50;display:none;flex-direction:column}
-  #stage.on{display:flex}
+  /* The bar OVERLAYS the frame and must not take height from it.
+     Ultra Pong sets body{height:100%} with flex centring. Shrink the viewport
+     by the bar height and centred content taller than the box overflows in
+     BOTH directions, putting the game’s own header permanently out of reach —
+     you cannot scroll to it. Every game that centres on a full-height body has
+     that shape, so the game gets the whole viewport and the bar floats over it. */
+  #stage{position:fixed;inset:0;background:var(--ink);z-index:50;display:none}
+  #stage.on{display:block}
+  #frame{position:absolute;inset:0;width:100%;height:100%;border:0;background:#000;display:block}
   #bar{
-    height:var(--bezel);flex:0 0 auto;
-    background:linear-gradient(180deg,var(--ink-3),var(--ink-2));
-    border-bottom:1px solid var(--line);
-    display:flex;align-items:center;gap:14px;padding:0 14px;
+    position:absolute;top:0;left:0;z-index:5;height:var(--bezel);max-width:96vw;
+    display:flex;align-items:center;gap:14px;padding:0 12px;
+    background:linear-gradient(180deg,rgba(28,26,34,.97),rgba(19,17,23,.93));
+    border-right:1px solid var(--line);border-bottom:1px solid var(--line);
+    border-radius:0 0 5px 0;transition:opacity .3s ease;
   }
+  /* It folds and dims rather than hiding. Once a game has focus this page stops
+     receiving mousemove at all — the cross-origin iframe swallows it — so a bar
+     that vanished could never be summoned back by moving the mouse. It has to
+     stay physically present, just quiet enough to ignore. */
+  #bar.slim{opacity:.26}
+  #bar:hover{opacity:1}
+  #bar .fold{
+    display:flex;align-items:center;gap:14px;overflow:hidden;white-space:nowrap;
+    max-width:75vw;opacity:1;transition:max-width .3s ease,opacity .2s ease;
+  }
+  #bar.slim .fold{max-width:0;opacity:0}
+  #bar:hover .fold{max-width:75vw;opacity:1}
   #back{
     background:var(--ink);border:1px solid var(--line);color:var(--text);
-    padding:6px 14px;border-radius:3px;cursor:pointer;font:inherit;font-size:13px;
+    padding:6px 13px;border-radius:3px;cursor:pointer;font:inherit;font-size:13px;flex:0 0 auto;
   }
   #back:hover{border-color:var(--bulb);color:var(--bulb)}
   #playing{font-size:13px;letter-spacing:.05em}
   #playing b{color:var(--bulb);font-weight:600}
-  #barnote{margin-left:auto;color:var(--text-faint);font-size:11px}
-  #frame{flex:1 1 auto;width:100%;border:0;background:#000;display:block}
+  #barnote{color:var(--text-faint);font-size:11px}
 
   .empty{color:var(--text-faint);padding:30px 0;font-size:13px}
   kbd{
@@ -191,8 +210,10 @@
 <div id="stage">
   <div id="bar">
     <button id="back" type="button">&larr; Marquee</button>
-    <span id="playing"></span>
-    <span id="barnote">Esc won't work once the game has focus — use the button.</span>
+    <span class="fold">
+      <span id="playing"></span>
+      <span id="barnote">Esc won’t work once the game has focus — use the button.</span>
+    </span>
   </div>
   <iframe id="frame" title="game" allow="fullscreen; gamepad; autoplay"></iframe>
 </div>
@@ -207,6 +228,8 @@
   var q      = document.getElementById('q');
   var stage  = document.getElementById('stage');
   var frame  = document.getElementById('frame');
+  var bar    = document.getElementById('bar');
+  var slimT  = null;
 
   // ----- the sign's bulbs -------------------------------------------------
   var bulbs = document.getElementById('bulbs');
@@ -324,14 +347,25 @@
     var needle = q.value.trim().toLowerCase();
     var live = playable.filter(function (g) { return matches(g, needle); });
     var dead = inert.filter(function (g) { return matches(g, needle); });
-    shown = live;
     if (cursor >= shown.length) cursor = Math.max(0, shown.length - 1);
 
+    // Three shelves, in billing order. A game with no billing declaration
+    // lands on the middle one — so a new game needs no curation to appear,
+    // and curation is a one-line comment in its own CLAUDE.md when someone
+    // has an opinion.
+    var feat = live.filter(function (g) { return g.billing === 'feature'; });
+    var prev = live.filter(function (g) { return g.billing === 'preview'; });
+    var rest = live.filter(function (g) { return g.billing !== 'feature' && g.billing !== 'preview'; });
+    shown = feat.concat(rest, prev);
+
     main.innerHTML = '';
-    var a = section('Playing', live, true);
-    if (a) main.appendChild(a);
-    var b = section('Not playable', dead, false);
-    if (b) main.appendChild(b);
+    [['Feature presentation', feat, true],
+     ['Now showing', rest, true],
+     ['Sneak preview', prev, true],
+     ['Not playable', dead, false]].forEach(function (row) {
+      var frag = section(row[0], row[1], row[2]);
+      if (frag) main.appendChild(frag);
+    });
     if (!live.length && !dead.length) {
       var e = document.createElement('div');
       e.className = 'empty';
@@ -394,10 +428,16 @@
     // player having to click first. contentWindow.focus() would be better and
     // is not reachable across the opaque origin — this is the available half.
     setTimeout(function () { try { frame.focus(); } catch (e) {} }, 60);
+    // Shown in full long enough to be read, then folded to a quiet corner tab.
+    clearTimeout(slimT);
+    bar.classList.remove('slim');
+    slimT = setTimeout(function () { bar.classList.add('slim'); }, 2800);
   }
 
   function stop() {
     stage.classList.remove('on');
+    clearTimeout(slimT);
+    bar.classList.remove('slim');
     // Blanking the src actually tears the game down. Leaving it loaded would
     // keep its audio playing and its rAF loop burning behind the list.
     frame.src = 'about:blank';

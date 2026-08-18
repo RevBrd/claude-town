@@ -79,16 +79,25 @@ A game tells Marquee things a scan cannot know, via an HTML comment in the game'
 `CLAUDE.md` — the file every game is already required to have. No new file type.
 
 ```
-<!-- marquee: play=snek.html -->
-<!-- marquee: play=none -->
-<!-- marquee: defects=authored -->
-<!-- marquee: play=b.html defects=none -->
+<!-- marquee: play=snek.html -->        which file is the game
+<!-- marquee: play=none -->             deliberately has no playable build
+<!-- marquee: defects=authored -->      visible defects are on purpose
+<!-- marquee: defects=none -->          sincere; every bug is a real bug
+<!-- marquee: billing=feature -->       headline it
+<!-- marquee: billing=preview -->       early build; shelve it as a preview
+
+<!-- marquee: play=b.html defects=none -->      keys may share one comment
 ```
+
+**A doc may carry more than one marker, anywhere in the file** — the entry-point declaration
+wants to sit beside the prose explaining it, an editorial one is happier at the bottom. Keys are
+merged across all of them and the *first* occurrence of a repeated key wins. Reading only the
+first marker was a real bug, caught by the fixture written while adding `billing`.
 
 An **absent key is unknown, never false.** `authoredDefects` is `true | false | null` and the
 null is load-bearing — see below for why.
 
-Only needed where a scan is genuinely ambiguous. Eighteen of twenty-three folders need nothing.
+Only `play` is ever *required*, and only where a scan is genuinely ambiguous — three folders as of 17 Aug 2026. `defects` and `billing` are always optional.
 
 ## Entry-point resolution, in order
 
@@ -144,8 +153,8 @@ a game somebody is actively editing, so the suite would go red every time a game
 suite that cries wolf gets deleted. The fixture reproduces each *hazard* instead, and hazards
 don't change when a game does.
 
-It also carries a **mutation suite** — nine deliberate breakages of derive.js's real rules, each
-naming the assertion that must go red. All nine are caught. If one ever escapes, the rule it
+It also carries a **mutation suite** — eleven deliberate breakages of derive.js's real rules, each
+naming the assertion that must go red. All eleven are caught. If one ever escapes, the rule it
 breaks is not actually covered and the suite is lying about its own coverage.
 
 `smoke.js` covers the page rather than the logic: it boots `marquee.html` in headless Chrome and
@@ -175,11 +184,24 @@ All verified in headless Chrome on 17 Aug 2026, not assumed — each one changed
 - **`postMessage` works child→parent** (origin `"null"`). Unused, but it's the one channel that
   exists if a game ever wants to tell the shell something.
 
+## Billing is editorial, and that is the point
+
+`billing` decides which shelf a game lands on — **Feature presentation**, **Now showing**
+(the default, for anything undeclared), or **Sneak preview**. It is the one field here that is
+not a fact about the filesystem, and it is deliberately **not inferred from the catalog's State
+column**, even though that column plainly says things like "Complete and playable" and "A kernel,
+not a game".
+
+That column is English prose, and reading prose for meaning is exactly how the authored-defect
+flag came to report the opposite of the truth for 13 of 18 games. A person reads it and writes a
+declaration; the tool never guesses. An undeclared game shows up on the middle shelf, so adding a
+game still needs no curation at all.
+
 ## Roadmap
 
 1. **Derivation layer** — done. Scan, join, resolve, report, manifest.
-2. **Launcher** — done. `marquee.html`: filter, keyboard nav, launch into a bezelled iframe, and
-   the drift readout on the page rather than only in the terminal.
+2. **Launcher** — done. `marquee.html`: filter, keyboard nav, three billing shelves, launch into a
+   floating-bezel iframe, and the drift readout on the page rather than only in the terminal.
 3. **Cabinet** — the skin, and the next decision. Deliberately deferred to here: launcher and
    cabinet share *all* the machinery and differ only in presentation, so the call gets made with
    the thing running rather than in the abstract. Nothing in `marquee.html` below the CSS block
@@ -189,6 +211,19 @@ All verified in headless Chrome on 17 Aug 2026, not assumed — each one changed
    rather than two. Buys a custom scheme per game — real origin isolation, which the filesystem
    cannot give, because every `file://` page in the collection currently shares one localStorage
    bucket under origin `null`. Verified empirically, not assumed.
+
+## Why the bezel floats
+
+The bar overlays the game rather than sitting above it, and that is load-bearing rather than
+stylistic. Ultra Pong sets `body{height:100%}` with flex centring. Take 46px off the viewport and
+centred content taller than the box overflows in **both** directions — the game's own header goes
+permanently out of reach, and no amount of scrolling gets it back. Every game that centres on a
+full-height body has that shape, so the game gets the whole viewport.
+
+It **folds and dims** after a few seconds instead of hiding, and that is also forced: once a game
+has focus this page stops receiving `mousemove` entirely, because the cross-origin iframe swallows
+it. A bar that vanished could never be summoned back by moving the mouse toward it. It has to stay
+physically present, just quiet enough to ignore.
 
 ## Open
 

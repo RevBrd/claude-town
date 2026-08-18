@@ -75,7 +75,12 @@ const TUNE = {
   TITLE_SNIFF_BYTES: 8192,
 
   // The declaration marker, e.g.  <!-- marquee: play=snek.html -->
-  DECLARATION: /<!--\s*marquee:\s*([^>]*?)\s*-->/i,
+  // GLOBAL on purpose. A game doc may carry more than one of these — an
+  // entry-point declaration wants to sit beside the prose explaining it, while
+  // an editorial one is happier at the bottom. Matching only the first silently
+  // dropped the rest, which is exactly the failure this project is organised
+  // against: it looked like it worked.
+  DECLARATION: /<!--\s*marquee:\s*([^>]*?)\s*-->/gi,
 
   // NOTE — there is deliberately no heuristic here for "does this game have
   // authored defects". The first version of this file grepped each game's
@@ -229,14 +234,18 @@ function readDoc(gameDir) {
 }
 
 function parseDeclaration(docText) {
-  if (!docText) return {};
-  const m = docText.match(TUNE.DECLARATION);
-  if (!m) return {};
   const out = {};
-  for (const pair of m[1].split(/[\s,]+/)) {
-    const eq = pair.indexOf('=');
-    if (eq > 0) out[pair.slice(0, eq).toLowerCase()] = pair.slice(eq + 1);
-    else if (pair) out[pair.toLowerCase()] = true;
+  if (!docText) return out;
+  // Every marquee comment in the file, merged. FIRST WINS on a repeated key:
+  // the declaration nearest the top of the doc is the canonical one, and a
+  // later contradiction should not quietly win just for being later.
+  for (const m of docText.matchAll(TUNE.DECLARATION)) {
+    for (const pair of m[1].split(/[\s,]+/)) {
+      const eq = pair.indexOf('=');
+      const key = (eq > 0 ? pair.slice(0, eq) : pair).toLowerCase();
+      if (!key || Object.prototype.hasOwnProperty.call(out, key)) continue;
+      out[key] = eq > 0 ? pair.slice(eq + 1) : true;
+    }
   }
   return out;
 }
@@ -328,6 +337,15 @@ function derive(opts) {
       authoredDefects: declaration.defects === 'authored' ? true
                      : declaration.defects === 'none'     ? false
                      : null,
+      // Editorial, not derivable. Nothing on disk knows whether a game is
+      // finished enough to headline — only a person does. So it is declared,
+      // or it is nothing. Deliberately NOT inferred from the catalog's State
+      // column: that column is English prose, and reading prose for meaning is
+      // precisely how the authored-defect flag came to report the opposite of
+      // the truth for 13 of 18 games.
+      billing: declaration.billing === 'feature' ? 'feature'
+             : declaration.billing === 'preview' ? 'preview'
+             : null,
     });
   }
 
@@ -368,10 +386,11 @@ function report(m) {
   L.push('Games root: ' + m.gamesRoot);
   L.push('');
 
-  L.push(`PLAYABLE (${playable.length})`);
+  const shelf = g => g.billing === 'feature' ? '◆ ' : g.billing === 'preview' ? '○ ' : '  ';
+  L.push(`PLAYABLE (${playable.length})    ◆ feature   ○ preview`);
   for (const g of playable) {
     const flag = g.authoredDefects === true ? '  [authored defects]' : '';
-    L.push('  ' + g.display.padEnd(22) + (g.entry || '').padEnd(30) +
+    L.push('  ' + shelf(g) + g.display.padEnd(22) + (g.entry || '').padEnd(28) +
            kb(g.bytes).padStart(7) + '   ' + (g.title ? '"' + g.title + '"' : '(no <title>)') + flag);
   }
 
