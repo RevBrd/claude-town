@@ -11,7 +11,7 @@ one-off, give it a folder and its own `CLAUDE.md`, and add a row here.
 
 | Project | What it is | State |
 |---|---|---|
-| [Marquee](Marquee/) | A front door to `Projects/Games/` — derives its catalog from the filesystem and the Games catalog table rather than keeping a list, so it reports drift instead of adding to it | Derivation layer done and tested. Launcher next, cabinet skin deferred by design. Read its `CLAUDE.md` |
+| [Marquee](Marquee/) | A front door to `Projects/Games/` — derives its catalog from the filesystem and the Games catalog table rather than keeping a list, so it reports drift instead of adding to it | Playable: open `Marquee/marquee.html`. 20 of 23 folders launch. Derivation layer and launcher both done and tested (fixture assertions + mutation suites). The cabinet skin and an Electron runtime are the open jobs, deferred deliberately. Read its `CLAUDE.md` |
 
 A folder here can be promoted to a top-level `Projects/` branch later if it grows into one; that
 is a folder move and one line in the global `CLAUDE.md`. Starting here and promoting is cheap.

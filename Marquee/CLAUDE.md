@@ -33,16 +33,23 @@ Benthos and Volley sitting on disk with real builds and no catalog row at all.
 ```
 Marquee/
   CLAUDE.md         this file
+  marquee.html      the launcher — open this
   tools/derive.js   the derivation layer — scan, join, resolve, report
-  tools/selftest.js fixture assertions + mutation suite
+  tools/selftest.js fixture assertions + mutation suite (derive.js)
+  tools/smoke.js    does the page boot and draw the manifest?
   manifest.json     generated; the join, as data
   manifest.js       generated; the same thing as a <script src>-able global
 ```
 
 `manifest.*` are **generated — never hand-edit them.** Run `node tools/derive.js --write`.
 
-Two output forms exist because the launcher will be a static page opened from `file://`, where
+Two output forms exist because `marquee.html` is a static page opened from `file://`, where
 `fetch()` is blocked. Same trick Shadowless and the Pet use.
+
+**`marquee.html` holds no list of games and must never grow one** — not even as a fallback for a
+missing manifest. A hardcoded list here would be a second catalog drifting quietly behind the
+first, which is the exact thing this project exists to avoid. With no manifest the page says so
+and shows nothing, and that is the design working.
 
 ## Commands
 
@@ -56,6 +63,10 @@ node tools/derive.js --write
 
 ```bash
 node tools/selftest.js
+```
+
+```bash
+node tools/smoke.js
 ```
 
 `--json` dumps the manifest to stdout, `--games <path>` points at a different tree, `--strict`
@@ -137,15 +148,42 @@ It also carries a **mutation suite** — nine deliberate breakages of derive.js'
 naming the assertion that must go red. All nine are caught. If one ever escapes, the rule it
 breaks is not actually covered and the suite is lying about its own coverage.
 
+`smoke.js` covers the page rather than the logic: it boots `marquee.html` in headless Chrome and
+checks the plate counts against the manifest. It was mutation-checked the same way — remove the
+drift block, break the playable filter, inject a syntax error; all three go red.
+
+**`probe.js` cannot substitute for it.** The global probe copies an artifact to the system temp
+dir before loading, which is correct for a self-contained file and wrong here: `marquee.html`
+loads `manifest.js` by relative path, so a copy in tmp renders the "no manifest" state and passes
+cheerfully having shown nothing. `smoke.js` copies alongside the original instead.
+
+## The file:// boundary, measured
+
+All verified in headless Chrome on 17 Aug 2026, not assumed — each one changed a design decision:
+
+- **`file://` iframes load from a `file://` parent.** The launcher works with no runtime at all.
+- **The parent cannot script into them.** Both sides are opaque origin `null`, so
+  `contentDocument` is `null`. Once a game has focus this page stops receiving keys — which is
+  why the bezel has a visible Back button rather than relying on Escape. Not a bug to route
+  around; it's the origin boundary, and only a runtime with a custom scheme changes it.
+- **localStorage is not partitioned for the frame.** An iframed game reads the same saves as a
+  double-clicked one, so launching through Marquee doesn't orphan high scores.
+- **But every `file://` page shares one bucket** under origin `null` — a key written by one game
+  is readable by all of them. Today that's held together purely by everyone picking distinct key
+  names. This is the strongest single argument for the Electron step, which can hand each game a
+  real origin.
+- **`postMessage` works child→parent** (origin `"null"`). Unused, but it's the one channel that
+  exists if a game ever wants to tell the shell something.
+
 ## Roadmap
 
 1. **Derivation layer** — done. Scan, join, resolve, report, manifest.
-2. **Launcher** — a static self-contained page over `manifest.js`. Plain and honest: list, filter,
-   launch into an iframe. Verified that `file://` iframes load from a `file://` parent (the parent
-   can't script into them, which bounds what the shell can do without a runtime).
-3. **Cabinet** — the skin. Deliberately deferred: launcher and cabinet share *all* the machinery
-   and differ only in presentation, so this decision gets made with the thing running rather than
-   in the abstract.
+2. **Launcher** — done. `marquee.html`: filter, keyboard nav, launch into a bezelled iframe, and
+   the drift readout on the page rather than only in the terminal.
+3. **Cabinet** — the skin, and the next decision. Deliberately deferred to here: launcher and
+   cabinet share *all* the machinery and differ only in presentation, so the call gets made with
+   the thing running rather than in the abstract. Nothing in `marquee.html` below the CSS block
+   should need to change to do it.
 4. **Runtime** *(if it happens)* — Electron over Tauri. Electron *is* the Chrome that `probe.js`
    already validates against, so "works in the harness" and "works in the shell" stay one claim
    rather than two. Buys a custom scheme per game — real origin isolation, which the filesystem

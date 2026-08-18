@@ -337,6 +337,12 @@ function derive(opts) {
 
   return {
     gamesRoot,
+    // The launcher is a static page next to this manifest, and it builds its
+    // iframe URLs from here. Relative, not absolute: a file:// page can follow
+    // "../../Games/Snek/snek.html" but an absolute Windows path has to be
+    // rebuilt into a file:/// URL, and that breaks the moment the tree moves
+    // or gets synced to another machine. Posix separators — this is a URL.
+    gamesRootRelative: path.relative(path.resolve(__dirname, '..'), gamesRoot).split(path.sep).join('/'),
     generated: new Date().toISOString(),
     games,
     missingFolders,
