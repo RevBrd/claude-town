@@ -1,12 +1,22 @@
 # Marquee
 
-A front door to `Projects/Games/`. The lit sign outside that lists what's playing — which is
-also the design constraint, because a marquee is only correct if it reflects what's actually in
-the building.
+A front door to `Projects/Games/` and a few neighbours. The lit sign outside that lists what's
+playing — which is also the design constraint, because a marquee is only correct if it reflects
+what is actually in the building.
 
-Marquee **keeps no list of games**. It derives one, every run, from the filesystem and from the
-catalog table that already lives in `Games/CLAUDE.md`. That is the whole architectural idea and
-everything else follows from it.
+Marquee **keeps no list of works**. It derives one, every run, from the filesystem and from the
+catalog table that already lives in each collection's own `CLAUDE.md`. That is the whole
+architectural idea and everything else follows from it.
+
+It is a **building**: five rooms as of 17 Aug 2026, holding 34 open works.
+
+| Room | Kind | What is in it |
+|---|---|---|
+| Main house | wing | `Projects/Games/` — the collection this was built for, and the only room with billing shelves |
+| Side stage | wing | `Misc Tools/` — the small self-contained tools |
+| Art house | wing | `Misc Tools/Claudelings/` |
+| Planetarium | wing | `Misc Tools/Space Stuff/` |
+| Also in the building | resident | the Pet, `~/.claude/Pet/` |
 
 ## Why it's built this way
 
@@ -28,12 +38,40 @@ So the list is derived, and the two rules that fall out of that are the ones to 
 That second property turned out to be worth more than expected. On the first live run it found
 Benthos and Volley sitting on disk with real builds and no catalog row at all.
 
+## The venue, and the one hand-written list
+
+`venue.json` is the floor plan, and it is **the only hand-written list in the project**. That is
+unavoidable: nothing on disk knows that `Projects/Games` and `~/.claude/Pet` belong in the same
+building. What keeps it honest is that it lists **roots, never works** — what is inside each root
+is still derived every run — and every root is validated, so a wing whose folder vanished is
+reported rather than quietly dropped.
+
+**A wing must be a curated collection with its own `CLAUDE.md` catalog table.** That bar is
+deliberate and it is the only thing standing between this and a general-purpose file browser,
+which would be worth considerably less than a good front door to one collection. A folder that
+merely contains HTML does not qualify. If you are tempted to add one because it has some HTML in
+it, the answer is no.
+
+**A resident** is a single work belonging to no collection, named in the floor plan because there
+is no catalog for it to be a row in. The Pet is the case this exists for. One at a time, on
+purpose. A resident carries two names: `section` labels its shelf, `name` is the work.
+
+Nested wings are handled: `Claudelings/` and `Space Stuff/` live inside `Misc Tools/`, so the
+Side Stage scan **annexes** them rather than reporting them as empty folders. A folder that is
+another wing's root is a door, not a work.
+
+**KSP Tools is deliberately out.** Its shape is genuinely different — loose HTML at the root, no
+per-tool folders, and a catalog keyed on backticked filenames rather than folder links. It needs a
+second scan mode, which is a real if bounded job. Deferred at Trevor's call, 17 Aug 2026, since
+that tree may reorganise itself first.
+
 ## Layout
 
 ```
 Marquee/
   CLAUDE.md         this file
   marquee.html      the launcher — open this
+  venue.json        the floor plan: which roots are rooms
   tools/derive.js   the derivation layer — scan, join, resolve, report
   tools/selftest.js fixture assertions + mutation suite (derive.js)
   tools/smoke.js    does the page boot and draw the manifest?
@@ -99,6 +137,25 @@ null is load-bearing — see below for why.
 
 Only `play` is ever *required*, and only where a scan is genuinely ambiguous — three folders as of 17 Aug 2026. `defects` and `billing` are always optional.
 
+## Catalog columns are located by header name
+
+The four collections write their tables differently:
+
+```
+Games        | Game | Premise | State |
+Misc Tools   | Tool | What it is | Built by |
+Space Stuff  | Tool | State | Built by |
+```
+
+So columns are found by matching the **header cell**, not by position, and tables are parsed one
+at a time rather than by scanning every pipe-line in the file — Space Stuff's `CLAUDE.md` holds
+more than one table, and a whole-file scan would merge rows with different column meanings.
+
+This is not the prose-reading banned elsewhere: a header cell is a structured key, not a sentence.
+When no header matches, it falls back to position **and records an anomaly**, and it never falls
+back onto a column another key already owns. Space Stuff genuinely has no description column, so
+its premise is empty and the launcher falls through to the State text — reported, not invented.
+
 ## Entry-point resolution, in order
 
 1. A declaration → obey it, and check the file is really there (`declared-missing` if not).
@@ -147,14 +204,14 @@ games, the answer is twenty-three one-line declarations, not a cleverer regex.
 
 ## Testing
 
-`selftest.js` asserts against a **synthetic fixture**, not against `Projects/Games/`. Testing the
+44 assertions. `selftest.js` asserts against a **synthetic fixture**, not against `Projects/Games/`. Testing the
 live collection was the first design and it was wrong: every assertion would encode a fact about
 a game somebody is actively editing, so the suite would go red every time a game shipped, and a
 suite that cries wolf gets deleted. The fixture reproduces each *hazard* instead, and hazards
 don't change when a game does.
 
-It also carries a **mutation suite** — eleven deliberate breakages of derive.js's real rules, each
-naming the assertion that must go red. All eleven are caught. If one ever escapes, the rule it
+It also carries a **mutation suite** — thirteen deliberate breakages of derive.js's real rules, each
+naming the assertion that must go red. All thirteen are caught. If one ever escapes, the rule it
 breaks is not actually covered and the suite is lying about its own coverage.
 
 `smoke.js` covers the page rather than the logic: it boots `marquee.html` in headless Chrome and

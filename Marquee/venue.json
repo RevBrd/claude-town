@@ -1,0 +1,52 @@
+{
+  "_comment": [
+    "Marquee's floor plan, and the ONLY hand-written list in the project.",
+    "It lists ROOTS, never works — what is inside each root is still derived",
+    "every run, so this file cannot drift the way a catalog can. Every root is",
+    "validated: if one vanishes, Marquee reports it instead of quietly shrinking.",
+    "",
+    "THE BAR FOR ADDING A WING is deliberately high: a wing must be a curated",
+    "collection with its own CLAUDE.md catalog table, so premises exist and",
+    "drift is detectable. A folder that merely contains HTML does not qualify.",
+    "That rule is the only thing between this and a general-purpose file",
+    "browser, which would be worth less than a good front door to one",
+    "collection. If you are tempted to add a folder because it has some HTML",
+    "in it, the answer is no.",
+    "",
+    "A RESIDENT is a single work that belongs to no collection, named here",
+    "because there is no catalog for it to be a row in. One at a time, on",
+    "purpose."
+  ],
+  "wings": [
+    {
+      "id": "games",
+      "name": "Main house",
+      "root": "../../Games",
+      "primary": true
+    },
+    {
+      "id": "tools",
+      "name": "Side stage",
+      "root": "../../Misc Tools"
+    },
+    {
+      "id": "claudelings",
+      "name": "Art house",
+      "root": "../../Misc Tools/Claudelings"
+    },
+    {
+      "id": "space",
+      "name": "Planetarium",
+      "root": "../../Misc Tools/Space Stuff"
+    }
+  ],
+  "residents": [
+    {
+      "id": "pet",
+      "name": "Shim",
+      "path": "../../../.claude/Pet",
+      "premise": "Something small and dark that lives in ~/.claude and accretes whatever it is given. Named Shim. It cannot be neglected.",
+      "section": "Also in the building"
+    }
+  ]
+}

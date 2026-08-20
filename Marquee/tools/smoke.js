@@ -48,8 +48,9 @@ if (!fs.existsSync(MANIFEST)) {
 }
 
 const manifest = JSON.parse(fs.readFileSync(MANIFEST, 'utf8'));
-const expectLive = manifest.games.filter(g => g.entryStatus === 'ok').length;
-const expectDead = manifest.games.length - expectLive;
+const entries    = manifest.entries || manifest.games || [];
+const expectLive = entries.filter(g => g.entryStatus === 'ok').length;
+const expectDead = entries.length - expectLive;
 
 // The listener goes in FIRST, before the page's own scripts, or a parse error
 // in the page is invisible — the error fires before any later listener exists.
@@ -65,10 +66,11 @@ setTimeout(function(){
   var d=document.createElement('div'); d.id='SMOKE';
   var live=document.querySelectorAll('.card:not(.inert)').length;
   var dead=document.querySelectorAll('.card.inert').length;
+  var rooms=document.querySelectorAll('.roomname').length;
   var firstHref='';
   try{ var c=document.querySelector('.card:not(.inert)'); firstHref=c?c.title:''; }catch(e){}
   d.textContent='SMOKE:'+((window.__errs||[]).join(' || ')||'ok')+
-                '|live='+live+'|dead='+dead+'|drift='+(document.querySelector('details.drift')?1:0)+
+                '|live='+live+'|dead='+dead+'|drift='+(document.querySelector('details.drift')?1:0)+'|rooms='+rooms+
                 '|first='+firstHref;
   d.style.cssText='position:fixed;left:-9999px';
   document.body.appendChild(d);
@@ -105,10 +107,12 @@ try {
 const hit = dom.match(/id="SMOKE"[^>]*>SMOKE:([^<]*)/);
 if (!hit) { console.error('FAIL  the page never ran its scripts'); process.exit(1); }
 
-const [status, liveP, deadP, driftP, firstP] = hit[1].split('|');
+const [status, liveP, deadP, driftP, roomsP, firstP] = hit[1].split('|');
 const live  = Number(liveP.replace('live=', ''));
 const dead  = Number(deadP.replace('dead=', ''));
 const drift = driftP === 'drift=1';
+const rooms = Number(roomsP.replace('rooms=', ''));
+const expectRooms = (manifest.wings || []).filter(w => !w.missing && entries.some(e => e.wing === w.id)).length;
 const first = firstP.replace('first=', '');
 
 const checks = [
@@ -116,6 +120,7 @@ const checks = [
   ['playable plates match manifest',  live === expectLive,  live + ' drawn, ' + expectLive + ' expected'],
   ['unplayable plates match manifest', dead === expectDead, dead + ' drawn, ' + expectDead + ' expected'],
   ['drift readout present',           drift, String(drift)],
+  ['every room drew a heading',       rooms === expectRooms, rooms + ' drawn, ' + expectRooms + ' expected'],
   ['a plate knows its entry file',    /\/.+\.html?$/.test(first), first || '(none)'],
 ];
 

@@ -71,6 +71,12 @@ function buildFixture(root) {
     '| [Parody](Parody/) | declares authored defects | fine |',
     '',
     'Trailing prose.',
+    '',
+    '## A second table, with different column names',
+    '',
+    '| Tool | What it is | Built by |',
+    '|---|---|---|',
+    '| [Tooly](Tooly/) | located by header name | Some Model |',
   ].join('\n'));
 
   mk('Solo/solo.html', html('SOLO'));
@@ -133,6 +139,8 @@ function buildFixture(root) {
   mk('Commas/game.html', html('COMMAS'));
   mk('Commas/CLAUDE.md', '# Commas' + NL + NL + '<!-- marquee: billing=preview, defects=authored -->' + NL);
 
+  mk('Tooly/tooly.html', html('TOOLY'));
+
   // No folder for Ghost/ — that is the point of Ghost.
 }
 
@@ -184,7 +192,7 @@ function assertions(derive, root) {
   // a parser that tracked table state instead of matching links would swallow
   // those lines as rows.
   const cat = derive.parseCatalog(path.join(root, 'CLAUDE.md'));
-  is('only linked rows are parsed',       cat.rows.length, 11);
+  is('only linked rows are parsed',       cat.rows.length, 12);
   is('prose pipes produce no anomalies',  cat.anomalies, []);
 
   // --- authored defects: three states, and unknown is not false -----------
@@ -204,6 +212,14 @@ function assertions(derive, root) {
   is('comma-separated keys split',      by('Commas').billing, 'preview');
   is('comma-separated second key',      by('Commas').authoredDefects, true);
   is('undeclared billing is null',      by('Solo').billing, null);
+
+  // --- one file, two tables, different headers ----------------------------
+  is('rows come from every table',      by('Tooly').catalogStatus, 'listed');
+  is('"What it is" maps to premise',    by('Tooly').premise, 'located by header name');
+  is('"Built by" maps to credit',       by('Tooly').credit, 'Some Model');
+  is('"Premise" still maps to premise', by('Solo').premise, 'one file');
+  is('named headers raise no anomaly',  m.anomalies, []);
+  is('entry url is encoded',            by('Two Words').url.indexOf('Two%20Words') >= 0, true);
 
   // --- incidental ---------------------------------------------------------
   is('title is pulled from the entry',    by('Decoyed').title, 'THE REAL ONE');
@@ -242,7 +258,7 @@ const MUTANTS = [
     find: '  return entries\n    .filter(d => d.isFile() && isHtml(d.name))\n    .map(d => d.name)',
     repl: '  const deep = [];\n' +
           '  for (const d of entries) if (d.isDirectory()) {\n' +
-          '    try { for (const f of fs.readdirSync(path.join(gameDir, d.name))) if (isHtml(f)) deep.push(f); } catch {}\n' +
+          '    try { for (const f of fs.readdirSync(path.join(dir, d.name))) if (isHtml(f)) deep.push(f); } catch {}\n' +
           '  }\n' +
           '  return entries\n    .filter(d => d.isFile() && isHtml(d.name))\n    .map(d => d.name).concat(deep)',
     expect: 'subfolder html is not a candidate',
@@ -267,14 +283,14 @@ const MUTANTS = [
   },
   {
     name: 'M8  unknown defect status collapsed to false',
-    find: '                     : null,',
-    repl: '                     : false,',
+    find: '                   : null,',
+    repl: '                   : false,',
     expect: 'undeclared is null, not false',
   },
   {
     name: 'M9  display name taken from the folder, not the catalog',
-    find: '      display: row ? row.display : folder,',
-    repl: '      display: folder,',
+    find: '    display: row ? row.display : folder,',
+    repl: '    display: folder,',
     expect: 'display name comes from catalog',
   },
   {
@@ -285,9 +301,21 @@ const MUTANTS = [
   },
   {
     name: 'M11 billing=preview silently dropped',
-    find: "             : declaration.billing === 'preview' ? 'preview'",
-    repl: "             : false ? 'preview'",
+    find: "           : declaration.billing === 'preview' ? 'preview'",
+    repl: "           : false ? 'preview'",
     expect: 'billing preview reads back',
+  },
+  {
+    name: 'M12 catalog columns taken by position, ignoring headers',
+    find: '        if (map[key] === -1 && TUNE.COLUMNS[key].test(header[c])) { map[key] = c; break; }',
+    repl: '        if (false) { map[key] = c; break; }',
+    expect: '"Built by" maps to credit',
+  },
+  {
+    name: 'M13 URL segments left unencoded',
+    find: "    .map(seg => (seg === '..' || seg === '.') ? seg : encodeURIComponent(seg))",
+    repl: '    .map(seg => seg)',
+    expect: 'entry url is encoded',
   },
 ];
 

@@ -136,6 +136,25 @@
   }
   h2.sec:first-child{margin-top:0}
 
+  /* --- rooms ----------------------------------------------------------- */
+  /* Marquee is a building. Each wing of the venue is a room, and the primary
+     one (the games) is the only room that gets billing shelves — elsewhere
+     three headings over two cards each would be filing, not billing. */
+  .room{margin-bottom:46px}
+  .roomname{
+    display:flex;align-items:baseline;gap:12px;
+    font-size:19px;letter-spacing:.24em;text-transform:uppercase;font-weight:600;
+    color:var(--text);padding-bottom:10px;margin-bottom:18px;
+    border-bottom:1px solid var(--line);
+  }
+  .roomname i{font-style:normal;font-size:11px;letter-spacing:.12em;color:var(--text-faint)}
+  .room.primary .roomname{color:var(--bulb)}
+  .room:not(.primary) .roomname{font-size:15px;letter-spacing:.2em;color:var(--text-dim)}
+  .roommissing{
+    border:1px solid var(--warn);border-radius:4px;padding:12px 14px;
+    color:var(--warn);font-size:12.5px;margin-bottom:24px;
+  }
+
   /* --- drift readout --------------------------------------------------- */
   details.drift{margin-top:38px;border-top:1px solid var(--line);padding-top:14px}
   details.drift summary{
@@ -223,13 +242,13 @@
 (function () {
   'use strict';
 
-  var M      = window.MARQUEE_MANIFEST || null;
-  var main   = document.getElementById('main');
-  var q      = document.getElementById('q');
-  var stage  = document.getElementById('stage');
-  var frame  = document.getElementById('frame');
-  var bar    = document.getElementById('bar');
-  var slimT  = null;
+  var M     = window.MARQUEE_MANIFEST || null;
+  var main  = document.getElementById('main');
+  var q     = document.getElementById('q');
+  var stage = document.getElementById('stage');
+  var frame = document.getElementById('frame');
+  var bar   = document.getElementById('bar');
+  var slimT = null;
 
   // ----- the sign's bulbs -------------------------------------------------
   var bulbs = document.getElementById('bulbs');
@@ -239,49 +258,54 @@
     bulbs.appendChild(el);
   }
 
-  // ----- no manifest ------------------------------------------------------
   if (!M) {
     document.getElementById('tagline').textContent = 'no manifest';
     main.innerHTML = '<div class="empty">' +
-      '<p><b>manifest.js is missing.</b> Marquee keeps no list of games, so with no manifest ' +
+      '<p><b>manifest.js is missing.</b> Marquee keeps no list of works, so with no manifest ' +
       'there is genuinely nothing to show — that is the design working, not a failure.</p>' +
       '<p>Generate it:</p><pre>node tools/derive.js --write</pre></div>';
     return;
   }
 
-  // ----- URL building -----------------------------------------------------
-  // Each path segment is encoded separately: folder names here include
-  // spaces, an apostrophe, four exclamation marks and an Æ.
-  function gameURL(g) {
-    var parts = M.gamesRootRelative.split('/').concat([g.folder, g.entry]);
-    return parts.map(function (p) {
-      return p === '..' || p === '.' ? p : encodeURIComponent(p);
-    }).join('/');
-  }
-
-  // ----- state ------------------------------------------------------------
-  var playable = M.games.filter(function (g) { return g.entryStatus === 'ok'; });
-  var inert    = M.games.filter(function (g) { return g.entryStatus !== 'ok'; });
-  var shown    = [];
-  var cursor   = 0;
+  // Entry URLs are built by derive.js, not here. These folder names contain
+  // spaces, an apostrophe, four exclamation marks and an AE ligature, and one
+  // encoder a mutation test can reach beats the same logic reimplemented in a
+  // script tag where it cannot be tested at all.
+  var shown  = [];
+  var cursor = 0;
 
   function reasonFor(g) {
     if (g.entryStatus === 'ambiguous')
       return g.candidates.length + ' candidate files and no declaration — Marquee will not guess. ' +
-             'Add a marquee comment to this game’s CLAUDE.md.';
+             'Add a marquee comment to this work’s CLAUDE.md.';
     if (g.entryStatus === 'declared-missing')
       return 'Its CLAUDE.md names "' + g.declared + '", which is not there.';
     if (g.declared === 'none') return 'Declared as having no playable build yet.';
     return 'No build yet.';
   }
 
+  function describe(g) {
+    // Premise, then state, then the page's own <title>. Not every collection's
+    // catalog has a description column — Space Stuff's is | Tool | State |
+    // Built by | — and an empty plate is worse than one carrying the next
+    // most specific thing that is actually true.
+    var t = g.premise || g.state || g.title || '';
+    return t.replace(/\*\*|`|\[|\]\([^)]*\)/g, '');
+  }
+
   function matches(g, needle) {
     if (!needle) return true;
-    return (g.display + ' ' + g.folder + ' ' + g.premise + ' ' + (g.title || ''))
+    return (g.display + ' ' + g.folder + ' ' + g.premise + ' ' + (g.title || '') + ' ' + g.wing)
       .toLowerCase().indexOf(needle) >= 0;
   }
 
-  // ----- rendering --------------------------------------------------------
+  function tag(text, cls) {
+    var s = document.createElement('span');
+    s.className = 'tag' + (cls ? ' ' + cls : '');
+    s.textContent = text;
+    return s;
+  }
+
   function card(g, live) {
     var el = document.createElement(live ? 'button' : 'div');
     el.className = 'card' + (live ? '' : ' inert');
@@ -295,11 +319,7 @@
     if (live) {
       var p = document.createElement('div');
       p.className = 'premise';
-      // Premise text comes from a markdown table; strip the light markup
-      // rather than rendering it, so a stray ** never leaks into the plate.
-      p.textContent = g.premise
-        ? g.premise.replace(/\*\*|`|\[|\]\([^)]*\)/g, '')
-        : (g.title || 'No catalog entry.');
+      p.textContent = describe(g);
       el.appendChild(p);
     } else {
       var w = document.createElement('div');
@@ -310,7 +330,7 @@
 
     var meta = document.createElement('div');
     meta.className = 'meta';
-    if (live) meta.appendChild(tag(Math.round(g.bytes / 1024) + ' KB'));
+    if (live && g.bytes != null) meta.appendChild(tag(Math.round(g.bytes / 1024) + ' KB'));
     if (g.authoredDefects === true) meta.appendChild(tag('authored defects', 'defects'));
     if (g.catalogStatus === 'uncatalogued') meta.appendChild(tag('uncatalogued', 'uncat'));
     el.appendChild(meta);
@@ -322,96 +342,144 @@
     return el;
   }
 
-  function tag(text, cls) {
-    var s = document.createElement('span');
-    s.className = 'tag' + (cls ? ' ' + cls : '');
-    s.textContent = text;
-    return s;
-  }
-
   function section(title, items, live) {
     if (!items.length) return null;
     var h = document.createElement('h2');
     h.className = 'sec';
     h.textContent = title + '  (' + items.length + ')';
-    var g = document.createElement('div');
-    g.className = 'grid';
-    items.forEach(function (item) { g.appendChild(card(item, live)); });
+    var grid = document.createElement('div');
+    grid.className = 'grid';
+    items.forEach(function (item) { grid.appendChild(card(item, live)); });
     var frag = document.createDocumentFragment();
     frag.appendChild(h);
-    frag.appendChild(g);
+    frag.appendChild(grid);
     return frag;
   }
 
+  // ----- rendering --------------------------------------------------------
   function render() {
     var needle = q.value.trim().toLowerCase();
-    var live = playable.filter(function (g) { return matches(g, needle); });
-    var dead = inert.filter(function (g) { return matches(g, needle); });
-    if (cursor >= shown.length) cursor = Math.max(0, shown.length - 1);
-
-    // Three shelves, in billing order. A game with no billing declaration
-    // lands on the middle one — so a new game needs no curation to appear,
-    // and curation is a one-line comment in its own CLAUDE.md when someone
-    // has an opinion.
-    var feat = live.filter(function (g) { return g.billing === 'feature'; });
-    var prev = live.filter(function (g) { return g.billing === 'preview'; });
-    var rest = live.filter(function (g) { return g.billing !== 'feature' && g.billing !== 'preview'; });
-    shown = feat.concat(rest, prev);
-
     main.innerHTML = '';
-    [['Feature presentation', feat, true],
-     ['Now showing', rest, true],
-     ['Sneak preview', prev, true],
-     ['Not playable', dead, false]].forEach(function (row) {
-      var frag = section(row[0], row[1], row[2]);
-      if (frag) main.appendChild(frag);
+    shown = [];
+    var totalLive = 0, totalDead = 0;
+
+    M.wings.forEach(function (w) {
+      if (w.missing) {
+        var warn = document.createElement('div');
+        warn.className = 'roommissing';
+        warn.textContent = (w.name || w.id) + ' — root missing: ' + w.root;
+        main.appendChild(warn);
+        return;
+      }
+
+      var mine = M.entries.filter(function (g) { return g.wing === w.id && matches(g, needle); });
+      if (!mine.length) return;
+
+      var live = mine.filter(function (g) { return g.entryStatus === 'ok'; });
+      var dead = mine.filter(function (g) { return g.entryStatus !== 'ok'; });
+      totalLive += live.length; totalDead += dead.length;
+
+      var room = document.createElement('section');
+      room.className = 'room' + (w.primary ? ' primary' : '');
+      var head = document.createElement('div');
+      head.className = 'roomname';
+      head.innerHTML = '<span></span><i>' + (w.kind === 'resident' ? 'resident' : live.length + ' open') + '</i>';
+      head.querySelector('span').textContent = w.name || w.id;
+      room.appendChild(head);
+
+      // Billing shelves only in the primary wing. Elsewhere they would be
+      // three headings over two cards each, which is filing, not billing.
+      var groups;
+      if (w.primary) {
+        var feat = live.filter(function (g) { return g.billing === 'feature'; });
+        var prev = live.filter(function (g) { return g.billing === 'preview'; });
+        var rest = live.filter(function (g) { return g.billing !== 'feature' && g.billing !== 'preview'; });
+        shown = shown.concat(feat, rest, prev);
+        groups = [['Feature presentation', feat, true],
+                  ['Now showing', rest, true],
+                  ['Sneak preview', prev, true],
+                  ['Not playable', dead, false]];
+      } else {
+        shown = shown.concat(live);
+        groups = [['', live, true], ['Not playable', dead, false]];
+      }
+
+      groups.forEach(function (row) {
+        if (!row[1].length) return;
+        if (!row[0]) {
+          var grid = document.createElement('div');
+          grid.className = 'grid';
+          row[1].forEach(function (item) { grid.appendChild(card(item, row[2])); });
+          room.appendChild(grid);
+          return;
+        }
+        var frag = section(row[0], row[1], row[2]);
+        if (frag) room.appendChild(frag);
+      });
+
+      main.appendChild(room);
     });
-    if (!live.length && !dead.length) {
+
+    if (!totalLive && !totalDead) {
       var e = document.createElement('div');
       e.className = 'empty';
       e.textContent = 'Nothing matches "' + q.value + '".';
       main.appendChild(e);
     }
+    if (cursor >= shown.length) cursor = Math.max(0, shown.length - 1);
     main.appendChild(driftBlock());
 
     document.getElementById('count').textContent =
-      live.length + ' playable' + (needle ? ' of ' + playable.length : '') +
-      (dead.length ? '  ·  ' + dead.length + ' not playable' : '');
+      totalLive + ' open' + (needle ? ' of ' + M.entries.length : '') +
+      (totalDead ? '  ·  ' + totalDead + ' not playable' : '');
   }
 
-  // The drift readout is on the page rather than only in the terminal report,
-  // because the whole reason Marquee derives its list is to surface this. A
+  // The drift readout lives on the page, not only in the terminal report,
+  // because surfacing this is the reason Marquee derives its list at all. A
   // launcher that silently omitted four folders would be the thing we were
   // trying not to build.
   function driftBlock() {
-    var uncat = M.games.filter(function (g) { return g.catalogStatus === 'uncatalogued'; });
-    var nodoc = M.games.filter(function (g) { return !g.hasDoc; });
-    var amb   = M.games.filter(function (g) { return g.entryStatus === 'ambiguous'; });
-    var undec = M.games.filter(function (g) { return g.authoredDefects === null; });
-    var names = function (a, k) {
-      return a.length ? a.map(function (g) { return g[k || 'folder']; }).join(', ') : '—';
+    var uncat = M.entries.filter(function (g) { return g.catalogStatus === 'uncatalogued'; });
+    var nodoc = M.entries.filter(function (g) { return !g.hasDoc; });
+    var amb   = M.entries.filter(function (g) { return g.entryStatus === 'ambiguous'; });
+    var undec = M.entries.filter(function (g) { return g.authoredDefects === null; });
+    var names = function (a) {
+      return a.length ? a.map(function (g) { return g.wing + '/' + g.folder; }).join(', ') : '—';
     };
+
+    var rows = [];
+    M.wings.forEach(function (w) {
+      (w.missingFolders || []).forEach(function (r) {
+        rows.push('catalog row, no folder      ' + w.id + '/' + r.folder);
+      });
+      (w.anomalies || []).forEach(function (a) {
+        rows.push('anomaly [' + a.kind + ']  ' + w.id + ': ' + a.detail);
+      });
+      if (w.missing) rows.push('WING ROOT MISSING           ' + w.id + ' — ' + w.root);
+    });
 
     var d = document.createElement('details');
     d.className = 'drift';
     var s = document.createElement('summary');
-    var n = uncat.length + nodoc.length + amb.length + M.missingFolders.length;
+    var n = uncat.length + amb.length + rows.length;
     s.textContent = 'Catalog drift  —  ' + n + ' item' + (n === 1 ? '' : 's');
     var body = document.createElement('div');
     body.className = 'body';
     body.textContent = [
-      'games root          ' + M.gamesRoot,
+      'floor plan          ' + M.venue,
       'manifest generated  ' + M.generated,
+      'rooms               ' + M.wings.map(function (w) { return w.id + '(' + (w.count || 0) + ')'; }).join('  '),
       '',
       'on disk, no catalog row     ' + names(uncat),
-      'catalog row, no folder      ' + (M.missingFolders.length ? M.missingFolders.map(function (r) { return r.folder; }).join(', ') : '—'),
-      'no CLAUDE.md                ' + names(nodoc),
       'ambiguous entry point       ' + names(amb),
-      'defect status undeclared    ' + undec.length + ' of ' + M.games.length + '  (unknown, not "sincere")',
+      'no CLAUDE.md                ' + names(nodoc),
+    ].concat(rows).concat([
+      'defect status undeclared    ' + undec.length + ' of ' + M.entries.length + '  (unknown, not "sincere")',
       '',
-      'Not all of this is an error. Some folders are simply queued for their',
-      'first pass. Read it, do not act on it blindly.',
-    ].join('\n');
+      'Not all of this is an error. Some folders are queued for a first pass,',
+      'and one is an empty artifact of a rearrangement. Read it, do not act on',
+      'it blindly.',
+    ]).join('\n');
     d.appendChild(s);
     d.appendChild(body);
     return d;
@@ -419,14 +487,15 @@
 
   // ----- launching --------------------------------------------------------
   function play(g) {
-    frame.src = gameURL(g);
-    document.getElementById('playing').innerHTML = 'Now playing — <b></b>';
-    document.getElementById('playing').querySelector('b').textContent = g.display;
+    frame.src = g.url;
+    var p = document.getElementById('playing');
+    p.innerHTML = 'Now playing — <b></b>';
+    p.querySelector('b').textContent = g.display;
     stage.classList.add('on');
     document.body.style.overflow = 'hidden';
-    // Focus the frame element so the keyboard reaches the game without the
-    // player having to click first. contentWindow.focus() would be better and
-    // is not reachable across the opaque origin — this is the available half.
+    // Focus the frame element so the keyboard reaches the work without a click
+    // first. contentWindow.focus() would be better and is unreachable across
+    // the opaque origin — this is the available half.
     setTimeout(function () { try { frame.focus(); } catch (e) {} }, 60);
     // Shown in full long enough to be read, then folded to a quiet corner tab.
     clearTimeout(slimT);
@@ -438,8 +507,8 @@
     stage.classList.remove('on');
     clearTimeout(slimT);
     bar.classList.remove('slim');
-    // Blanking the src actually tears the game down. Leaving it loaded would
-    // keep its audio playing and its rAF loop burning behind the list.
+    // Blanking the src actually tears it down. Leaving it loaded keeps its
+    // audio playing and its rAF loop burning behind the list.
     frame.src = 'about:blank';
     document.body.style.overflow = '';
     q.focus();
@@ -447,9 +516,9 @@
   document.getElementById('back').addEventListener('click', stop);
 
   // ----- keyboard ---------------------------------------------------------
-  // Only ever heard while the list has focus. Once a game is running the
-  // parent stops receiving keys entirely — that is a file:// origin boundary,
-  // not something to work around, and it is why the bezel has a button.
+  // Only ever heard while the list has focus. Once a work is running the
+  // parent stops receiving keys entirely — a file:// origin boundary, not
+  // something to work around, and the reason the bezel has a button.
   document.addEventListener('keydown', function (e) {
     if (stage.classList.contains('on')) {
       if (e.key === 'Escape') stop();
@@ -481,8 +550,9 @@
   q.addEventListener('input', function () { cursor = 0; render(); });
 
   // ----- go ---------------------------------------------------------------
+  var openCount = M.entries.filter(function (g) { return g.entryStatus === 'ok'; }).length;
   document.getElementById('tagline').textContent =
-    M.games.length + ' folders read from ' + M.gamesRootRelative + '  ·  no list kept, derived every build';
+    openCount + ' open across ' + M.wings.length + ' rooms  ·  no list kept, derived every build';
   render();
   q.focus();
 })();
