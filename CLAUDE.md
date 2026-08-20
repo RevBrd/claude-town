@@ -11,7 +11,7 @@ one-off, give it a folder and its own `CLAUDE.md`, and add a row here.
 
 | Project | What it is | State |
 |---|---|---|
-| [Marquee](Marquee/) | A front door to the whole tree — derives its catalog from the filesystem and each collection’s own catalog table rather than keeping a list, so it reports drift instead of adding to it | Playable: open `Marquee/marquee.html`. A building of five rooms, 34 works open: Games, Misc Tools, Claudelings, Space Stuff, and the Pet. Derivation layer and launcher done and tested (44 assertions, 13 mutants, plus a page smoke suite). The cabinet skin and an Electron runtime are the open jobs, deferred deliberately. Read its `CLAUDE.md` |
+| [Marquee](Marquee/) | A front door to the whole tree — derives its catalog from the filesystem and each collection’s own catalog table rather than keeping a list, so it reports drift instead of adding to it | Playable: open `Marquee/marquee.html`. A building of five rooms, 34 works open: Games, Misc Tools, Claudelings, Space Stuff, and the Pet. Derivation layer and launcher done and tested (44 assertions, 13 mutants, plus a page smoke suite). The cabinet is built: a single-screen picture house with derived offset-ink posters, a chased-bulb sign and a changeable-letter reader board. An Electron runtime is the one open job. Read its `CLAUDE.md` |
 
 A folder here can be promoted to a top-level `Projects/` branch later if it grows into one; that
 is a folder move and one line in the global `CLAUDE.md`. Starting here and promoting is cheap.

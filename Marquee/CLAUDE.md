@@ -259,15 +259,60 @@ game still needs no curation at all.
 1. **Derivation layer** — done. Scan, join, resolve, report, manifest.
 2. **Launcher** — done. `marquee.html`: filter, keyboard nav, three billing shelves, launch into a
    floating-bezel iframe, and the drift readout on the page rather than only in the terminal.
-3. **Cabinet** — the skin, and the next decision. Deliberately deferred to here: launcher and
-   cabinet share *all* the machinery and differ only in presentation, so the call gets made with
-   the thing running rather than in the abstract. Nothing in `marquee.html` below the CSS block
-   should need to change to do it.
+3. **Cabinet** — done. The picture house, above. Deferring it was the right call: by the time it
+   was built the machinery had already survived three rounds of widening, so the skin was a skin
+   and nothing else.
 4. **Runtime** *(if it happens)* — Electron over Tauri. Electron *is* the Chrome that `probe.js`
    already validates against, so "works in the harness" and "works in the shell" stay one claim
    rather than two. Buys a custom scheme per game — real origin isolation, which the filesystem
    cannot give, because every `file://` page in the collection currently shares one localStorage
    bucket under origin `null`. Verified empirically, not assumed.
+
+## The house
+
+Marquee is a **single-screen neighbourhood cinema, a couple of decades past its best**. It is a
+theatre rather than an arcade because the vocabulary got there first — feature presentation,
+sneak preview, side stage, art house — and fighting that would have cost more than it bought.
+
+- **The facade** is a projecting marquee sign: chased bulbs top and bottom, the house name, and a
+  changeable-letter **reader board** underneath. The board announces whatever poster is hovered or
+  focused, and with nothing selected it works through what is currently on the shelves. An empty
+  board is a closed cinema.
+- **Two bulbs are out and they stay out**, as does a deterministic tilt on a few reader-board
+  letters. A marquee with every bulb lit and every letter straight is a rendering, not a sign.
+- **The lobby** is rooms of posters. **The auditorium** is the full viewport with the bezel
+  floating over it.
+
+### The posters are derived, not drawn
+
+There is no artwork for any of these works, and inventing some would break a rule that matters:
+`Games/CLAUDE.md` says games are stylistically independent on purpose and a look must never be
+carried from one into another. **A poster is therefore not a claim about how a game looks.** It is
+the *house's* printing — one grid, one type treatment, eight faded offset-ink palettes and five
+layout variants, all picked from a hash of the work's own folder name. The cinema prints its own
+programme; it does not speak for the film.
+
+Everything on a sheet is something already in the manifest: title, premise (or state, or the
+page's own `<title>`), size, and the **credit** column — which is why the Side Stage posters
+carry "OPUS 4.8" and the Main House ones do not. Misc Tools has a *Built by* column and Games
+does not.
+
+The large ghosted initial is a printer's device. It exists because a one-sheet is mostly image and
+there is no image, so a sheet with a two-line tagline would otherwise read as a card with a hole
+in it.
+
+**A measured detail worth keeping:** the palette is chosen with `hash >>> 3`, not `hash`. FNV-1a's
+low bits are badly biased on short similar strings — across the real 38 folder names, `hash % 8`
+put **19 of them in one bucket**; `hash >>> 3` spreads the same names 6,4,6,5,4,5,4,4. A palette
+picker that paints half the lobby one colour is not much of a palette picker, and it looked
+plausible until it was counted.
+
+### The skin and the machinery really were separable
+
+The cabinet pass changed presentation only, and there is evidence rather than a claim:
+**`tools/smoke.js` passed unmodified**, because every class name it depends on — `.card`,
+`.card.inert`, `.roomname`, `details.drift` — was deliberately preserved. Keep it that way. If a
+future skin renames those, update the suite in the same commit and say so.
 
 ## Why the bezel floats
 
