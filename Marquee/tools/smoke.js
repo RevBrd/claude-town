@@ -12,6 +12,12 @@
 // nothing. The copy therefore goes NEXT TO the original, under a temp name,
 // where every relative path still resolves.
 //
+// Marquee opens ONE ROOM at a time, so this checks the plates in whichever
+// room is actually open rather than counting the whole manifest. Which room
+// that is gets read off the lit door, not assumed — the page remembers the
+// last room in localStorage, and an assumption about which one opens would be
+// a suite that passes on this machine and fails on the next.
+//
 // This is a smoke test, in the same sense probe.js is one: it catches "threw
 // on load", "drew nothing", and "drew the wrong number of things". It cannot
 // see a wrong colour or a dead button. The derivation logic is covered
@@ -48,9 +54,9 @@ if (!fs.existsSync(MANIFEST)) {
 }
 
 const manifest = JSON.parse(fs.readFileSync(MANIFEST, 'utf8'));
-const entries    = manifest.entries || manifest.games || [];
-const expectLive = entries.filter(g => g.entryStatus === 'ok').length;
-const expectDead = entries.length - expectLive;
+const entries     = manifest.entries || manifest.games || [];
+const expectDoors = (manifest.wings || [])
+  .filter(w => !w.missing && entries.some(e => e.wing === w.id)).length;
 
 // The listener goes in FIRST, before the page's own scripts, or a parse error
 // in the page is invisible — the error fires before any later listener exists.
@@ -67,10 +73,14 @@ setTimeout(function(){
   var live=document.querySelectorAll('.card:not(.inert)').length;
   var dead=document.querySelectorAll('.card.inert').length;
   var rooms=document.querySelectorAll('.roomname').length;
+  var doors=document.querySelectorAll('.door').length;
+  var lit=document.querySelector('.door.here');
+  var open=lit?lit.getAttribute('data-room'):'';
+  var themed=document.querySelectorAll('.card.themed').length;
   var firstHref='';
   try{ var c=document.querySelector('.card:not(.inert)'); firstHref=c?c.title:''; }catch(e){}
   d.textContent='SMOKE:'+((window.__errs||[]).join(' || ')||'ok')+
-                '|live='+live+'|dead='+dead+'|drift='+(document.querySelector('details.drift')?1:0)+'|rooms='+rooms+
+                '|live='+live+'|dead='+dead+'|drift='+(document.querySelector('details.drift')?1:0)+'|rooms='+rooms+'|doors='+doors+'|open='+open+'|themed='+themed+
                 '|first='+firstHref;
   d.style.cssText='position:fixed;left:-9999px';
   document.body.appendChild(d);
@@ -107,20 +117,30 @@ try {
 const hit = dom.match(/id="SMOKE"[^>]*>SMOKE:([^<]*)/);
 if (!hit) { console.error('FAIL  the page never ran its scripts'); process.exit(1); }
 
-const [status, liveP, deadP, driftP, roomsP, firstP] = hit[1].split('|');
+const [status, liveP, deadP, driftP, roomsP, doorsP, openP, themedP, firstP] = hit[1].split('|');
 const live  = Number(liveP.replace('live=', ''));
 const dead  = Number(deadP.replace('dead=', ''));
 const drift = driftP === 'drift=1';
-const rooms = Number(roomsP.replace('rooms=', ''));
-const expectRooms = (manifest.wings || []).filter(w => !w.missing && entries.some(e => e.wing === w.id)).length;
-const first = firstP.replace('first=', '');
+const rooms  = Number(roomsP.replace('rooms=', ''));
+const doors  = Number(doorsP.replace('doors=', ''));
+const themed = Number(themedP.replace('themed=', ''));
+const open   = openP.replace('open=', '');
+const first  = firstP.replace('first=', '');
+
+const inRoom     = entries.filter(g => g.wing === open);
+const expectLive = inRoom.filter(g => g.entryStatus === 'ok').length;
+const expectDead = inRoom.length - expectLive;
+const expectThemed = inRoom.filter(g => g.poster).length;
 
 const checks = [
   ['no JS errors on load',            status === 'ok', status],
   ['playable plates match manifest',  live === expectLive,  live + ' drawn, ' + expectLive + ' expected'],
   ['unplayable plates match manifest', dead === expectDead, dead + ' drawn, ' + expectDead + ' expected'],
   ['drift readout present',           drift, String(drift)],
-  ['every room drew a heading',       rooms === expectRooms, rooms + ' drawn, ' + expectRooms + ' expected'],
+  ['exactly one room is open',        rooms === 1, rooms + ' room headings drawn'],
+  ['a door per room',                 doors === expectDoors, doors + ' drawn, ' + expectDoors + ' expected'],
+  ['the open room is a real one',     !!open && entries.some(g => g.wing === open), open || '(none)'],
+  ['declared posters are applied',    themed === expectThemed, themed + ' themed, ' + expectThemed + ' expected'],
   ['a plate knows its entry file',    /\/.+\.html?$/.test(first), first || '(none)'],
 ];
 
@@ -129,5 +149,5 @@ for (const [name, pass, detail] of checks) {
   console.log((pass ? '  ok    ' : '  FAIL  ') + name + (pass ? '' : '  — ' + detail));
   if (!pass) bad++;
 }
-console.log(bad ? `\n${bad} check(s) failed.` : `\nAll green. ${live} playable, ${dead} not.`);
+console.log(bad ? `\n${bad} check(s) failed.` : `\nAll green. Room "${open}": ${live} playable, ${dead} not, ${themed} printing their own.`);
 process.exit(bad ? 1 : 0);

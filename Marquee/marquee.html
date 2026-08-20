@@ -166,6 +166,44 @@
     padding:1px 5px;font:11px Consolas,monospace;color:var(--text-dim);
   }
 
+  /* ===== THE DOORS ==================================================== */
+  /* Rooms are walked between rather than scrolled past. One room is open at a
+     time; typing in the filter box temporarily opens the whole building,
+     because a directory search that only looks in the room you happen to be
+     standing in is a worse search. */
+  .doors{
+    max-width:1180px;margin:0 auto;padding:0 4px 18px;
+    display:flex;gap:8px;flex-wrap:wrap;align-items:stretch;
+  }
+  .door{
+    position:relative;background:#15111d;border:1px solid var(--line);
+    border-bottom-width:3px;border-radius:3px 3px 1px 1px;
+    color:var(--text-dim);font:inherit;cursor:pointer;
+    padding:9px 15px 8px;text-align:left;min-width:104px;
+    transition:background .15s,border-color .15s,color .15s,transform .12s;
+  }
+  .door b{display:block;font-size:11.5px;letter-spacing:.15em;text-transform:uppercase;font-weight:700}
+  .door i{display:block;font-style:normal;font-size:9.5px;letter-spacing:.1em;color:var(--text-faint);margin-top:3px}
+  .door:hover{color:var(--text);border-color:#4a4160;transform:translateY(-1px)}
+  .door.here{
+    background:linear-gradient(180deg,#241d33,#181324);
+    color:var(--bulb);border-color:var(--bulb);
+    box-shadow:0 0 20px rgba(255,156,46,.14);
+  }
+  .door.here i{color:var(--text-dim)}
+  /* The lamp above an open door. */
+  .door.here::before{
+    content:'';position:absolute;top:-5px;left:50%;transform:translateX(-50%);
+    width:5px;height:5px;border-radius:50%;background:var(--bulb);
+    box-shadow:0 0 7px var(--bulb-hot);
+  }
+  .doors.searching .door{opacity:.4}
+  .doors.searching .door.here{opacity:.55}
+  .searchnote{
+    align-self:center;color:var(--bulb);font-size:11px;letter-spacing:.1em;
+    text-transform:uppercase;padding-left:4px;
+  }
+
   /* ===== THE LOBBY ==================================================== */
   main{max-width:1180px;margin:0 auto;padding:30px 20px 70px}
 
@@ -312,6 +350,32 @@
   .card.inert:hover{transform:none;box-shadow:0 2px 0 rgba(0,0,0,.4)}
   .card.inert .why{font-size:10px;line-height:1.4;opacity:.9}
 
+  /* --- a work printing its own sheet ---------------------------------- */
+  /* A declared poster overrides the derived palette by setting the same three
+     custom properties inline, so the whole rest of the poster CSS is unaware
+     that anything special happened. The vocabulary is closed and validated in
+     derive.js — nothing unvalidated reaches this file. */
+  .card.themed::before{opacity:.45}
+  /* House programme sheets are old and foxed. A studio-supplied one-sheet is
+     freshly printed, so it gets a gloss instead of a stain. */
+  .card.themed::after{
+    background:linear-gradient(115deg, rgba(255,255,255,.10), transparent 42%);
+  }
+  .card.themed .pfoot{opacity:.72}
+
+  .face-condensed .ptitle{letter-spacing:-.02em;transform:scaleX(.93);transform-origin:left top}
+  .face-slab .ptitle{font-family:Georgia,"Times New Roman",serif;letter-spacing:.005em}
+  .face-slab .pmark{font-family:Georgia,serif}
+  .face-hand .ptitle{
+    font-family:"Segoe Print","Bradley Hand","Comic Sans MS",cursive;
+    text-transform:none;letter-spacing:0;font-weight:700;
+  }
+  .face-hand .pmark{font-family:"Segoe Print","Comic Sans MS",cursive}
+  .face-mono .ptitle{font-family:Consolas,ui-monospace,monospace;letter-spacing:.01em;font-weight:700}
+  .face-mono .pmark{font-family:Consolas,monospace}
+  .face-neon .ptitle{text-shadow:0 0 7px currentColor,0 0 20px var(--accent)}
+  .face-neon .pmark{opacity:.26;text-shadow:0 0 18px var(--accent)}
+
   /* ===== HOUSE RECORDS (the drift readout) ============================ */
   details.drift{margin-top:44px;border-top:1px solid var(--line);padding-top:16px}
   details.drift summary{
@@ -382,10 +446,11 @@
     <div class="bulbs" id="bulbsBot"></div>
     <div class="board" id="board"></div>
   </div>
+  <div class="doors" id="doors"></div>
   <div class="boxoffice">
     <input id="q" type="search" placeholder="Filter — press / to jump here" autocomplete="off" spellcheck="false">
     <span class="count" id="count"></span>
-    <span class="count"><kbd>&larr;&rarr;</kbd> move &nbsp; <kbd>Enter</kbd> play &nbsp; <kbd>Esc</kbd> clear</span>
+    <span class="count"><kbd>&larr;&rarr;</kbd> move &nbsp; <kbd>[</kbd><kbd>]</kbd> rooms &nbsp; <kbd>Enter</kbd> play &nbsp; <kbd>Esc</kbd> clear</span>
     <span class="count" id="tagline"></span>
   </div>
 </header>
@@ -416,6 +481,12 @@
   var bar   = document.getElementById('bar');
   var board = document.getElementById('board');
   var slimT = null, idleT = null, idleN = 0;
+  var doors = document.getElementById('doors');
+  var here  = null;   // which room is open
+  // Namespaced because every file:// page in the tree shares ONE localStorage
+  // bucket under origin "null" — the exact collision the Electron step exists
+  // to fix. Until then, a distinctive key is the whole defence.
+  var ROOM_KEY = 'marquee:room';
 
   // ----- the sign ---------------------------------------------------------
   function bulbRow(el, n, dead) {
@@ -512,7 +583,25 @@
 
   function card(g, live) {
     var c = document.createElement(live ? 'button' : 'div');
-    c.className = 'card ' + inkFor(g) + ' ' + variantFor(g) + (live ? '' : ' inert');
+    // A declared FACE replaces the derived layout variant rather than layering
+    // on top of it. Both govern the type, and leaving both on meant Prompt
+    // Defense's declared mono face rendered in the variant's italic — a game's
+    // own choice losing an argument with a hash. Colours are different: those
+    // override cleanly, so the variant stays when only colours were declared.
+    var faced = !!(g.poster && g.poster.face);
+    c.className = 'card ' + inkFor(g) + (faced ? '' : ' ' + variantFor(g)) + (live ? '' : ' inert');
+
+    // A work may print its own sheet. It overrides the derived palette by
+    // setting the same three properties, so every other rule below is unaware
+    // anything special happened. Values are validated in derive.js; a bad one
+    // never reaches here, it reaches the drift readout instead.
+    if (g.poster) {
+      c.classList.add('themed');
+      if (g.poster.paper)  c.style.setProperty('--paper',  g.poster.paper);
+      if (g.poster.ink)    c.style.setProperty('--ink',    g.poster.ink);
+      if (g.poster.accent) c.style.setProperty('--accent', g.poster.accent);
+      if (g.poster.face)   c.classList.add('face-' + g.poster.face);
+    }
     if (live) c.type = 'button';
 
     var band = bandFor(g);
@@ -561,6 +650,51 @@
     return wrap;
   }
 
+  // ----- the doors --------------------------------------------------------
+  function openRooms() {
+    return M.wings.filter(function (w) {
+      return !w.missing && M.entries.some(function (g) { return g.wing === w.id; });
+    });
+  }
+
+  function setRoom(id, announce) {
+    var rooms = openRooms();
+    if (!rooms.some(function (w) { return w.id === id; })) id = (rooms[0] || {}).id;
+    here = id;
+    try { localStorage.setItem(ROOM_KEY, id); } catch (e) {}
+    cursor = 0;
+    render();
+    if (announce) {
+      var w = rooms.filter(function (r) { return r.id === id; })[0];
+      if (w) { stopIdle(); setBoard(w.name || w.id); setTimeout(startIdle, 1600); }
+    }
+  }
+
+  function stepRoom(d) {
+    var rooms = openRooms();
+    var i = rooms.map(function (w) { return w.id; }).indexOf(here);
+    setRoom(rooms[(i + d + rooms.length) % rooms.length].id, true);
+  }
+
+  function drawDoors(searching) {
+    doors.innerHTML = '';
+    doors.className = 'doors' + (searching ? ' searching' : '');
+    openRooms().forEach(function (w) {
+      var open = M.entries.filter(function (g) {
+        return g.wing === w.id && g.entryStatus === 'ok';
+      }).length;
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'door' + (w.id === here ? ' here' : '');
+      b.setAttribute('data-room', w.id);
+      b.appendChild(el('b', null, w.name || w.id));
+      b.appendChild(el('i', null, w.kind === 'resident' ? 'resident' : open + ' open'));
+      b.addEventListener('click', function () { setRoom(w.id, true); });
+      doors.appendChild(b);
+    });
+    if (searching) doors.appendChild(el('span', 'searchnote', 'searching the whole building'));
+  }
+
   // ----- rendering --------------------------------------------------------
   function render() {
     var needle = q.value.trim().toLowerCase();
@@ -568,7 +702,14 @@
     shown = [];
     var totalLive = 0, totalDead = 0;
 
+    // One room at a time — except while filtering, when the whole building is
+    // searched. A directory search that only looks in the room you happen to
+    // be standing in is a worse search than no rooms at all.
+    var searching = !!needle;
+    drawDoors(searching);
+
     M.wings.forEach(function (w) {
+      if (!searching && w.id !== here) return;
       if (w.missing) {
         main.appendChild(el('div', 'roommissing',
           (w.name || w.id) + ' — root missing: ' + w.root));
@@ -643,6 +784,7 @@
   // through whatever is currently on the shelves.
   function startIdle() {
     clearInterval(idleT);
+    // Whatever is on in the room you are standing in, not the whole building.
     var titles = shown.length ? shown : M.entries.filter(function (g) { return g.entryStatus === 'ok'; });
     if (!titles.length) { setBoard('nothing showing', true); return; }
     var tick = function () { setBoard(titles[idleN++ % titles.length].display, true); };
@@ -741,6 +883,15 @@
     }
     if (e.key === '/' && document.activeElement !== q) { e.preventDefault(); q.focus(); q.select(); return; }
     if (e.key === 'Escape') { q.value = ''; render(); q.blur(); return; }
+    // Bracket keys walk between rooms; the arrows are already spoken for by
+    // the posters. Digits jump straight to a door.
+    if (e.key === '[') { e.preventDefault(); stepRoom(-1); return; }
+    if (e.key === ']') { e.preventDefault(); stepRoom(1);  return; }
+    if (/^[1-9]$/.test(e.key) && document.activeElement !== q) {
+      var rooms = openRooms(), n = Number(e.key) - 1;
+      if (rooms[n]) { e.preventDefault(); setRoom(rooms[n].id, true); }
+      return;
+    }
 
     var cards = main.querySelectorAll('.card:not(.inert)');
     if (!cards.length) return;
@@ -768,7 +919,11 @@
   var openCount = M.entries.filter(function (g) { return g.entryStatus === 'ok'; }).length;
   document.getElementById('tagline').textContent =
     openCount + ' open across ' + M.wings.length + ' rooms  ·  no list kept, derived every build';
-  render();
+  var remembered = null;
+  try { remembered = localStorage.getItem(ROOM_KEY); } catch (e) {}
+  var first = openRooms().filter(function (w) { return w.primary; })[0] || openRooms()[0];
+  here = remembered || (first || {}).id;
+  setRoom(here, false);
   q.focus();
 })();
 </script>

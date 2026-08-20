@@ -141,6 +141,19 @@ function buildFixture(root) {
 
   mk('Tooly/tooly.html', html('TOOLY'));
 
+  // A work printing its own poster, and one getting every part of it wrong.
+  mk('Themed/game.html', html('THEMED'));
+  mk('Themed/CLAUDE.md', '# Themed' + NL + NL +
+     '<!-- marquee: paper=#10001f ink=#ffd000 accent=#ff1f8f face=neon -->' + NL);
+
+  mk('BadPoster/game.html', html('BAD POSTER'));
+  mk('BadPoster/CLAUDE.md', '# BadPoster' + NL + NL +
+     '<!-- marquee: paper=chartreuse ink=#3a3a3a face=wingdings -->' + NL);
+
+  mk('LowContrast/game.html', html('LOW CONTRAST'));
+  mk('LowContrast/CLAUDE.md', '# LowContrast' + NL + NL +
+     '<!-- marquee: paper=#333333 ink=#3a3a3a -->' + NL);
+
   // No folder for Ghost/ — that is the point of Ghost.
 }
 
@@ -220,6 +233,24 @@ function assertions(derive, root) {
   is('"Premise" still maps to premise', by('Solo').premise, 'one file');
   is('named headers raise no anomaly',  m.anomalies, []);
   is('entry url is encoded',            by('Two Words').url.indexOf('Two%20Words') >= 0, true);
+
+  // --- declared posters ----------------------------------------------------
+  is('declared poster is kept',        by('Themed').poster,
+     { paper: '#10001f', ink: '#ffd000', accent: '#ff1f8f', face: 'neon' });
+  is('undeclared poster is null',      by('Solo').poster, null);
+  is('clean poster warns nothing',     by('Themed').posterWarnings, []);
+
+  // A bad value must be DROPPED, never passed through into the page.
+  is('non-hex colour is dropped',      by('BadPoster').poster.paper, undefined);
+  is('unknown face is dropped',        by('BadPoster').poster.face, undefined);
+  is('valid sibling still kept',       by('BadPoster').poster.ink, '#3a3a3a');
+  is('bad values are reported',        by('BadPoster').posterWarnings.length >= 2, true);
+
+  is('low contrast is reported',
+     by('LowContrast').posterWarnings.some(function (w) { return w.indexOf('contrast') >= 0; }), true);
+  is('low contrast still renders',     by('LowContrast').poster.paper, '#333333');
+  is('contrast maths is right',
+     Math.round(derive.contrastRatio('#ffffff', '#000000')), 21);
 
   // --- incidental ---------------------------------------------------------
   is('title is pulled from the entry',    by('Decoyed').title, 'THE REAL ONE');
@@ -316,6 +347,24 @@ const MUTANTS = [
     find: "    .map(seg => (seg === '..' || seg === '.') ? seg : encodeURIComponent(seg))",
     repl: '    .map(seg => seg)',
     expect: 'entry url is encoded',
+  },
+  {
+    name: 'M14 unvalidated colour injected straight through',
+    find: '    if (TUNE.POSTER_HEX.test(v)) out[key] = v.toLowerCase();',
+    repl: '    if (true) out[key] = v.toLowerCase();',
+    expect: 'non-hex colour is dropped',
+  },
+  {
+    name: 'M15 unknown face accepted',
+    find: '    if (TUNE.POSTER_FACES.indexOf(declaration.face) >= 0) out.face = declaration.face;',
+    repl: '    if (true) out.face = declaration.face;',
+    expect: 'unknown face is dropped',
+  },
+  {
+    name: 'M16 contrast never checked',
+    find: '    if (r < TUNE.POSTER_MIN_CONTRAST) {',
+    repl: '    if (false) {',
+    expect: 'low contrast is reported',
   },
 ];
 

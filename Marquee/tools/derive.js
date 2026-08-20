@@ -102,6 +102,21 @@ const TUNE = {
   // prose-reading that got banned elsewhere — a header cell is a structured
   // key, not a sentence — and when nothing matches it falls back to position
   // AND says so, rather than silently mislabelling a column.
+  // A work may declare its own poster. Deliberately a SMALL, CLOSED vocabulary
+  // rather than free CSS: the values are injected into the page, and a lobby
+  // of 34 unrelated posters is noise rather than a lobby. Three colours and a
+  // named face is enough to make a sheet unmistakably a game's own while still
+  // reading as one printer's work.
+  //
+  // Anything that fails validation is DROPPED AND REPORTED, never injected.
+  POSTER_HEX: /^#[0-9a-fA-F]{3,8}$/,
+  POSTER_FACES: ['house', 'condensed', 'slab', 'hand', 'mono', 'neon'],
+  // Below this contrast ratio the sheet is reported as hard to read. It is
+  // still rendered — a declaration beats a derivation, and the drift readout
+  // is the right place to argue about it — but nobody gets to ship an
+  // illegible poster without the tool saying so.
+  POSTER_MIN_CONTRAST: 3.2,
+
   COLUMNS: {
     premise: /premise|what it|description|about|summary|concept/i,
     state:   /state|status|progress/i,
@@ -302,6 +317,8 @@ function countOtherFiles(dir) {
 //   <!-- marquee: defects=none -->          sincere; every bug is a real bug
 //   <!-- marquee: billing=feature -->       headline it
 //   <!-- marquee: billing=preview -->       early build; shelve it as a preview
+//   <!-- marquee: paper=#10001f ink=#ffd000 accent=#ff1f8f face=neon -->
+//                                           print this one in its own colours
 //
 // Keys are independent, may share one comment, and may be spread across
 // several comments anywhere in the file. An absent key is UNKNOWN, never
@@ -327,6 +344,60 @@ function parseDeclaration(docText) {
     }
   }
   return out;
+}
+
+// WCAG relative luminance, so "is this readable" is a measured number rather
+// than an opinion formed while looking at one monitor in one room.
+function luminance(hex) {
+  let h = hex.slice(1);
+  if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+  const v = [0, 2, 4].map(i => {
+    const c = parseInt(h.substr(i, 2), 16) / 255;
+    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  });
+  return 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2];
+}
+
+function contrastRatio(a, b) {
+  const la = luminance(a), lb = luminance(b);
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+}
+
+// A declared poster, validated. Returns { poster, warnings }: poster is null
+// when nothing was declared, which is the normal case and means the house
+// prints its own sheet from the derived palette.
+function parsePoster(declaration, folder) {
+  const warnings = [];
+  const out = {};
+
+  for (const key of ['paper', 'ink', 'accent']) {
+    const v = declaration[key];
+    if (v == null) continue;
+    if (TUNE.POSTER_HEX.test(v)) out[key] = v.toLowerCase();
+    else warnings.push(folder + ': ' + key + '="' + v + '" is not a hex colour — ignored');
+  }
+
+  if (declaration.face != null) {
+    if (TUNE.POSTER_FACES.indexOf(declaration.face) >= 0) out.face = declaration.face;
+    else warnings.push(folder + ': face="' + declaration.face + '" is not one of ' +
+                       TUNE.POSTER_FACES.join('/') + ' — ignored');
+  }
+
+  if (!Object.keys(out).length) return { poster: null, warnings };
+
+  // A half-declared poster is worse than none: declaring paper alone leaves
+  // the derived ink on top of it, and those were never chosen together.
+  if (out.paper && !out.ink) warnings.push(folder + ': paper declared without ink — the sheet keeps its derived type colour');
+  if (out.ink && !out.paper) warnings.push(folder + ': ink declared without paper — the type keeps its derived sheet');
+
+  if (out.paper && out.ink) {
+    const r = contrastRatio(out.paper, out.ink);
+    if (r < TUNE.POSTER_MIN_CONTRAST) {
+      warnings.push(folder + ': paper/ink contrast is ' + r.toFixed(1) + ':1, under ' +
+                    TUNE.POSTER_MIN_CONTRAST + ':1 — the poster will be hard to read');
+    }
+  }
+  return { poster: out, warnings };
 }
 
 function extractTitle(htmlPath) {
@@ -369,6 +440,7 @@ function describeFolder(dir, folder, row, fromDir) {
   const declaration = parseDeclaration(doc.text);
   const candidates = listEntryCandidates(dir);
   const resolved = resolveEntry(dir, candidates, declaration);
+  const posterInfo = parsePoster(declaration, folder);
 
   let bytes = null, modified = null, title = null, url = null;
   if (resolved.entry) {
@@ -417,6 +489,10 @@ function describeFolder(dir, folder, row, fromDir) {
     billing: declaration.billing === 'feature' ? 'feature'
            : declaration.billing === 'preview' ? 'preview'
            : null,
+    // null = nobody has declared one, so the house prints its own from the
+    // derived palette. That is the normal case and not a deficiency.
+    poster: posterInfo.poster,
+    posterWarnings: posterInfo.warnings,
   };
 }
 
@@ -592,6 +668,11 @@ function report(m) {
     for (const r of (w.missingFolders || [])) L.push('  catalog row, no folder      ' + w.id + '/' + r.folder);
     for (const a of (w.anomalies || []))      L.push('  anomaly [' + a.kind + ']  ' + w.id + ': ' + a.detail);
   }
+  const themed = m.entries.filter(g => g.poster).length;
+  L.push('  posters declared            ' + themed + ' of ' + m.entries.length + '  (the rest are house-printed)');
+  for (const g of m.entries) {
+    for (const w of (g.posterWarnings || [])) L.push('  poster                      ' + w);
+  }
   const undec = m.entries.filter(g => g.authoredDefects === null).length;
   L.push('  defect status undeclared    ' + undec + ' of ' + m.entries.length + '  (unknown, not "sincere")');
   return L.join('\n');
@@ -659,5 +740,5 @@ if (require.main === module) {
 module.exports = {
   deriveVenue, deriveWing, deriveResident, derive: deriveWing,
   report, parseCatalog, parseDeclaration, listEntryCandidates, resolveEntry,
-  decodeTarget, encodeUrl, TUNE,
+  decodeTarget, encodeUrl, parsePoster, contrastRatio, TUNE,
 };

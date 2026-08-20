@@ -210,8 +210,8 @@ a game somebody is actively editing, so the suite would go red every time a game
 suite that cries wolf gets deleted. The fixture reproduces each *hazard* instead, and hazards
 don't change when a game does.
 
-It also carries a **mutation suite** — thirteen deliberate breakages of derive.js's real rules, each
-naming the assertion that must go red. All thirteen are caught. If one ever escapes, the rule it
+It also carries a **mutation suite** — sixteen deliberate breakages of derive.js's real rules, each
+naming the assertion that must go red. All sixteen are caught. If one ever escapes, the rule it
 breaks is not actually covered and the suite is lying about its own coverage.
 
 `smoke.js` covers the page rather than the logic: it boots `marquee.html` in headless Chrome and
@@ -283,7 +283,19 @@ sneak preview, side stage, art house — and fighting that would have cost more 
 - **The lobby** is rooms of posters. **The auditorium** is the full viewport with the bezel
   floating over it.
 
-### The posters are derived, not drawn
+### You walk between the rooms
+
+**One room is open at a time.** The doors sit under the sign, the open one is lit, and you move
+with a click, `[` / `]`, or a digit. The room is remembered in `localStorage` under
+`marquee:room` — namespaced because every `file://` page in this tree shares one bucket under
+origin `null`, which is the collision the Electron step exists to fix.
+
+**Typing in the filter box temporarily opens the whole building.** A directory search that only
+looks in the room you happen to be standing in is a worse search than no rooms at all, so the
+doors dim, a note says so, and every match appears with its room named. Clear the box and you are
+back where you were standing.
+
+### The posters are derived, not drawn — unless the work says otherwise
 
 There is no artwork for any of these works, and inventing some would break a rule that matters:
 `Games/CLAUDE.md` says games are stylistically independent on purpose and a look must never be
@@ -296,6 +308,39 @@ Everything on a sheet is something already in the manifest: title, premise (or s
 page's own `<title>`), size, and the **credit** column — which is why the Side Stage posters
 carry "OPUS 4.8" and the Main House ones do not. Misc Tools has a *Built by* column and Games
 does not.
+
+### A work may print its own sheet
+
+Trevor's call, 17 Aug 2026: the Games rule about stylistic independence is "try not to do the
+same things" between *games*, and a showcase *for* the games is a different thing. So a work can
+carry its own colours.
+
+**The declaration lives with the work, never here.** That is the whole point. A poster
+hand-authored inside Marquee would be per-work data kept in the launcher — it would go stale the
+moment someone reskinned a game, and nothing would notice. A declaration in the game's own
+`CLAUDE.md` sits next to the code that would change it.
+
+```
+<!-- marquee: paper=#10001f ink=#ffd000 accent=#ff1f8f face=neon -->
+```
+
+- **A closed, validated vocabulary** — three hex colours and one of six named faces
+  (`house`, `condensed`, `slab`, `hand`, `mono`, `neon`). Not free CSS: the values are injected
+  into the page, and a lobby of 34 unrelated posters is noise rather than a lobby.
+- **Anything invalid is dropped and reported**, never injected. A non-hex colour, an unknown face,
+  or a half-declaration (paper without ink) all surface in the drift readout.
+- **Contrast is measured, not eyeballed.** WCAG relative luminance; under 3.2:1 the sheet is
+  reported as hard to read. It still renders — a declaration beats a derivation, and the drift
+  readout is the right place to argue about it — but nobody ships an illegible poster in silence.
+- **A declared face replaces the derived layout variant.** Both govern the type, and leaving both
+  on meant Prompt Defense's declared `mono` rendered in the variant's italic: a game's own choice
+  losing an argument with a hash. Colours override cleanly, so the variant stays when only colours
+  are declared.
+
+Eight games declare one as of 17 Aug 2026, and **every colour was read out of that game's own
+stylesheet rather than invented** — each declaration names its source so a later session can check
+the claim instead of trusting it. The other thirty are house-printed, which is not a deficiency:
+a lobby with some studio one-sheets and some house programme cards is what a real one looks like.
 
 The large ghosted initial is a printer's device. It exists because a one-sheet is mostly image and
 there is no image, so a sheet with a two-line tagline would otherwise read as a card with a hole
@@ -313,6 +358,12 @@ The cabinet pass changed presentation only, and there is evidence rather than a 
 **`tools/smoke.js` passed unmodified**, because every class name it depends on — `.card`,
 `.card.inert`, `.roomname`, `details.drift` — was deliberately preserved. Keep it that way. If a
 future skin renames those, update the suite in the same commit and say so.
+
+The **doors** pass then broke that suite on purpose, and that was correct too. One room open at a
+time means the page no longer draws every room, so the suite's counts were genuinely stale rather
+than wrong-headed. It went red, and the fix was to teach it the new model: count the plates in
+whichever room is *actually* open, read off the lit door rather than assumed. An assumption about
+which room opens would be a suite that passes on this machine and fails on the next.
 
 ## Why the bezel floats
 

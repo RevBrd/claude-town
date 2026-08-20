@@ -1,5 +1,5 @@
 {
-  "generated": "2026-08-20T11:01:23.696Z",
+  "generated": "2026-08-20T22:37:16.369Z",
   "venue": "C:\\Users\\fonte\\Projects\\Claude Town\\Marquee\\venue.json",
   "wings": [
     {
@@ -92,6 +92,8 @@
       "hasDoc": true,
       "authoredDefects": null,
       "billing": "preview",
+      "poster": null,
+      "posterWarnings": [],
       "wing": "games"
     },
     {
@@ -115,6 +117,13 @@
       "hasDoc": true,
       "authoredDefects": null,
       "billing": "preview",
+      "poster": {
+        "paper": "#05060d",
+        "ink": "#eaf1fb",
+        "accent": "#ffb14e",
+        "face": "house"
+      },
+      "posterWarnings": [],
       "wing": "games"
     },
     {
@@ -136,6 +145,8 @@
       "hasDoc": false,
       "authoredDefects": null,
       "billing": null,
+      "poster": null,
+      "posterWarnings": [],
       "wing": "games"
     },
     {
@@ -161,6 +172,13 @@
       "hasDoc": true,
       "authoredDefects": null,
       "billing": "feature",
+      "poster": {
+        "paper": "#060917",
+        "ink": "#e6e2d4",
+        "accent": "#d4af37",
+        "face": "slab"
+      },
+      "posterWarnings": [],
       "wing": "games"
     },
     {
@@ -184,6 +202,8 @@
       "hasDoc": true,
       "authoredDefects": null,
       "billing": "feature",
+      "poster": null,
+      "posterWarnings": [],
       "wing": "games"
     },
     {
@@ -207,6 +227,8 @@
       "hasDoc": false,
       "authoredDefects": null,
       "billing": null,
+      "poster": null,
+      "posterWarnings": [],
       "wing": "games"
     },
     {
@@ -230,6 +252,8 @@
       "hasDoc": true,
       "authoredDefects": null,
       "billing": "feature",
+      "poster": null,
+      "posterWarnings": [],
       "wing": "games"
     },
     {
@@ -253,6 +277,8 @@
       "hasDoc": true,
       "authoredDefects": null,
       "billing": "preview",
+      "poster": null,
+      "posterWarnings": [],
       "wing": "games"
     },
     {
@@ -276,6 +302,8 @@
       "hasDoc": true,
       "authoredDefects": null,
       "billing": "feature",
+      "poster": null,
+      "posterWarnings": [],
       "wing": "games"
     },
     {
@@ -299,6 +327,8 @@
       "hasDoc": true,
       "authoredDefects": null,
       "billing": "preview",
+      "poster": null,
+      "posterWarnings": [],
       "wing": "games"
     },
     {
@@ -322,6 +352,13 @@
       "hasDoc": true,
       "authoredDefects": null,
       "billing": "feature",
+      "poster": {
+        "paper": "#0a0020",
+        "ink": "#ffe9f4",
+        "accent": "#e74c8b",
+        "face": "condensed"
+      },
+      "posterWarnings": [],
       "wing": "games"
     },
     {
@@ -345,6 +382,13 @@
       "hasDoc": true,
       "authoredDefects": null,
       "billing": "feature",
+      "poster": {
+        "paper": "#0b0d12",
+        "ink": "#e8e4d8",
+        "accent": "#d4af6a",
+        "face": "slab"
+      },
+      "posterWarnings": [],
       "wing": "games"
     },
     {
@@ -368,6 +412,8 @@
       "hasDoc": true,
       "authoredDefects": null,
       "billing": "preview",
+      "poster": null,
+      "posterWarnings": [],
       "wing": "games"
     },
     {
@@ -391,6 +437,8 @@
       "hasDoc": true,
       "authoredDefects": null,
       "billing": null,
+      "poster": null,
+      "posterWarnings": [],
       "wing": "games"
     },
     {
@@ -414,6 +462,13 @@
       "hasDoc": true,
       "authoredDefects": null,
       "billing": "preview",
+      "poster": {
+        "paper": "#16242a",
+        "ink": "#cbd6cf",
+        "accent": "#c39140",
+        "face": "slab"
+      },
+      "posterWarnings": [],
       "wing": "games"
     },
     {
@@ -437,6 +492,8 @@
       "hasDoc": true,
       "authoredDefects": null,
       "billing": "preview",
+      "poster": null,
+      "posterWarnings": [],
       "wing": "games"
     },
     {
@@ -460,6 +517,13 @@
       "hasDoc": true,
       "authoredDefects": null,
       "billing": "feature",
+      "poster": {
+        "paper": "#f0eee6",
+        "ink": "#26241f",
+        "accent": "#d97757",
+        "face": "mono"
+      },
+      "posterWarnings": [],
       "wing": "games"
     },
     {
@@ -484,6 +548,8 @@
       "hasDoc": true,
       "authoredDefects": null,
       "billing": null,
+      "poster": null,
+      "posterWarnings": [],
       "wing": "games"
     },
     {
@@ -507,6 +573,8 @@
       "hasDoc": true,
       "authoredDefects": null,
       "billing": "feature",
+      "poster": null,
+      "posterWarnings": [],
       "wing": "games"
     },
     {
@@ -531,6 +599,13 @@
       "hasDoc": true,
       "authoredDefects": false,
       "billing": "feature",
+      "poster": {
+        "paper": "#f6f2e3",
+        "ink": "#2f3d8c",
+        "accent": "#d9736f",
+        "face": "hand"
+      },
+      "posterWarnings": [],
       "wing": "games"
     },
     {
@@ -554,6 +629,13 @@
       "hasDoc": true,
       "authoredDefects": null,
       "billing": "feature",
+      "poster": {
+        "paper": "#10001f",
+        "ink": "#ffd000",
+        "accent": "#ff1f8f",
+        "face": "neon"
+      },
+      "posterWarnings": [],
       "wing": "games"
     },
     {
@@ -575,6 +657,8 @@
       "hasDoc": false,
       "authoredDefects": null,
       "billing": null,
+      "poster": null,
+      "posterWarnings": [],
       "wing": "games"
     },
     {
@@ -598,6 +682,8 @@
       "hasDoc": false,
       "authoredDefects": null,
       "billing": null,
+      "poster": null,
+      "posterWarnings": [],
       "wing": "games"
     },
     {
@@ -621,6 +707,8 @@
       "hasDoc": true,
       "authoredDefects": null,
       "billing": null,
+      "poster": null,
+      "posterWarnings": [],
       "wing": "tools"
     },
     {
@@ -642,6 +730,8 @@
       "hasDoc": true,
       "authoredDefects": null,
       "billing": null,
+      "poster": null,
+      "posterWarnings": [],
       "wing": "tools"
     },
     {
@@ -665,6 +755,8 @@
       "hasDoc": true,
       "authoredDefects": null,
       "billing": null,
+      "poster": null,
+      "posterWarnings": [],
       "wing": "tools"
     },
     {
@@ -688,6 +780,8 @@
       "hasDoc": true,
       "authoredDefects": null,
       "billing": null,
+      "poster": null,
+      "posterWarnings": [],
       "wing": "tools"
     },
     {
@@ -711,6 +805,8 @@
       "hasDoc": true,
       "authoredDefects": null,
       "billing": null,
+      "poster": null,
+      "posterWarnings": [],
       "wing": "tools"
     },
     {
@@ -734,6 +830,8 @@
       "hasDoc": true,
       "authoredDefects": null,
       "billing": null,
+      "poster": null,
+      "posterWarnings": [],
       "wing": "tools"
     },
     {
@@ -757,6 +855,8 @@
       "hasDoc": true,
       "authoredDefects": null,
       "billing": null,
+      "poster": null,
+      "posterWarnings": [],
       "wing": "claudelings"
     },
     {
@@ -780,6 +880,8 @@
       "hasDoc": true,
       "authoredDefects": null,
       "billing": null,
+      "poster": null,
+      "posterWarnings": [],
       "wing": "claudelings"
     },
     {
@@ -803,6 +905,8 @@
       "hasDoc": true,
       "authoredDefects": null,
       "billing": null,
+      "poster": null,
+      "posterWarnings": [],
       "wing": "claudelings"
     },
     {
@@ -826,6 +930,8 @@
       "hasDoc": true,
       "authoredDefects": null,
       "billing": null,
+      "poster": null,
+      "posterWarnings": [],
       "wing": "claudelings"
     },
     {
@@ -849,6 +955,8 @@
       "hasDoc": true,
       "authoredDefects": null,
       "billing": null,
+      "poster": null,
+      "posterWarnings": [],
       "wing": "space"
     },
     {
@@ -872,6 +980,8 @@
       "hasDoc": true,
       "authoredDefects": null,
       "billing": null,
+      "poster": null,
+      "posterWarnings": [],
       "wing": "space"
     },
     {
@@ -895,6 +1005,8 @@
       "hasDoc": true,
       "authoredDefects": null,
       "billing": null,
+      "poster": null,
+      "posterWarnings": [],
       "wing": "space"
     },
     {
@@ -918,6 +1030,8 @@
       "hasDoc": true,
       "authoredDefects": null,
       "billing": null,
+      "poster": null,
+      "posterWarnings": [],
       "wing": "space"
     },
     {
@@ -941,6 +1055,8 @@
       "hasDoc": true,
       "authoredDefects": null,
       "billing": null,
+      "poster": null,
+      "posterWarnings": [],
       "wing": "pet"
     }
   ]
