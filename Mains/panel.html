@@ -1,0 +1,556 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mains</title>
+<!--
+  panel.html — the front panel. The one human-facing surface in this project,
+  and therefore the only one that gets the enamel-and-panel-meter treatment.
+  Everything else here talks to instances and stays dry, because output is
+  measured in context and a costume costs the same as content.
+
+  It dogfoods client/mains.js rather than fetching directly. If the shim ever
+  breaks, this page goes dark, which is a much better way to find out than a
+  quiet failure inside somebody's artifact six weeks from now.
+-->
+<style>
+  :root {
+    --bg:     #14110d;
+    --panel:  #1c1813;
+    --plate:  #232019;
+    --line:   #3a3126;
+    --line-2: #4a4031;
+    --text:   #d8cfc0;
+    --dim:    #8a7f6d;
+    --dimmer: #635a4c;
+    --live:   #e8b33a;
+    --live-d: #8a6716;
+    --dead:   #c4553d;
+    --cool:   #7fb3d5;
+    --mono:   ui-monospace, "Cascadia Mono", Consolas, "DejaVu Sans Mono", monospace;
+    --sans:   "Segoe UI", system-ui, -apple-system, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body { margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    /* faint vertical banding, like a painted steel cabinet door */
+    background-image:
+      repeating-linear-gradient(90deg,
+        rgba(255,255,255,.012) 0 1px, transparent 1px 3px),
+      radial-gradient(120% 80% at 50% -10%, rgba(232,179,58,.06), transparent 60%);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    padding: 2.2rem 1.2rem 4rem;
+  }
+
+  .wrap { max-width: 62rem; margin: 0 auto; }
+
+  /* ---- nameplate ------------------------------------------------------ */
+
+  header {
+    display: flex; align-items: flex-end; gap: 1.2rem;
+    flex-wrap: wrap;
+    border-bottom: 2px solid var(--line);
+    padding-bottom: 1rem; margin-bottom: .5rem;
+  }
+
+  .plate {
+    background: var(--plate);
+    border: 1px solid var(--line-2);
+    border-radius: 2px;
+    padding: .7rem 1.3rem .6rem;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.05), 0 2px 0 rgba(0,0,0,.4);
+  }
+  .plate h1 {
+    margin: 0;
+    font: 800 2.1rem/1 var(--sans);
+    letter-spacing: .38em;
+    text-indent: .38em;
+    color: var(--live);
+    text-shadow: 0 0 22px rgba(232,179,58,.28);
+  }
+  .plate .spec {
+    margin-top: .35rem;
+    font: 600 .62rem/1 var(--mono);
+    letter-spacing: .3em;
+    color: var(--dimmer);
+  }
+
+  .tagline {
+    flex: 1 1 14rem;
+    font-size: .82rem; line-height: 1.6; color: var(--dim);
+    padding-bottom: .3rem;
+  }
+  .tagline b { color: var(--text); font-weight: 600; }
+
+  /* ---- the live lamp -------------------------------------------------- */
+
+  .lamp {
+    display: flex; align-items: center; gap: .6rem;
+    padding-bottom: .5rem;
+  }
+  .bulb {
+    width: 13px; height: 13px; border-radius: 50%;
+    background: var(--live);
+    box-shadow: 0 0 6px var(--live), 0 0 18px rgba(232,179,58,.55);
+    animation: hum 3.4s ease-in-out infinite;
+  }
+  .bulb.out {
+    background: #3a2a20; box-shadow: none; animation: none;
+  }
+  @keyframes hum {
+    0%, 100% { opacity: 1; }
+    47%      { opacity: .78; }
+    52%      { opacity: 1; }
+  }
+  .lamp span {
+    font: 700 .68rem/1 var(--mono); letter-spacing: .22em; color: var(--live);
+  }
+  .lamp.out span { color: var(--dead); }
+
+  /* ---- instrument row -------------------------------------------------- */
+
+  .instruments {
+    display: grid;
+    grid-template-columns: 15rem 1fr;
+    gap: 1rem;
+    margin: 1.6rem 0 2rem;
+  }
+  @media (max-width: 44rem) { .instruments { grid-template-columns: 1fr; } }
+
+  .case {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.03);
+  }
+
+  .meter-case { padding: .9rem .9rem .5rem; }
+  .meter-case svg { display: block; width: 100%; height: auto; }
+
+  .readouts {
+    padding: 1rem 1.2rem;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+    gap: 1rem 1.4rem;
+    align-content: start;
+  }
+  .ro-label {
+    font: 600 .58rem/1 var(--mono); letter-spacing: .2em;
+    color: var(--dimmer); margin-bottom: .4rem;
+  }
+  .ro-value {
+    font: 400 1.35rem/1 var(--mono); color: var(--text);
+    font-variant-numeric: tabular-nums;
+  }
+  .ro-value.amber { color: var(--live); }
+  .ro-unit { font-size: .7rem; color: var(--dim); margin-left: .25rem; }
+
+  /* mechanical hour-meter digits */
+  .odo {
+    display: inline-flex; gap: 2px;
+  }
+  .odo i {
+    font-style: normal;
+    background: #100e0a;
+    border: 1px solid var(--line);
+    border-radius: 1px;
+    padding: .1rem .22rem;
+    color: var(--text);
+    box-shadow: inset 0 -4px 6px rgba(0,0,0,.55), inset 0 3px 4px rgba(255,255,255,.04);
+  }
+  .odo i.sep { background: none; border: none; box-shadow: none; color: var(--dimmer); padding: .1rem 0; }
+
+  /* ---- breaker panel --------------------------------------------------- */
+
+  h2 {
+    font: 700 .66rem/1 var(--mono); letter-spacing: .26em;
+    color: var(--dimmer); margin: 0 0 .9rem;
+    display: flex; align-items: center; gap: .8rem;
+  }
+  h2::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+
+  .breakers { display: grid; gap: .5rem; }
+
+  .breaker {
+    display: grid;
+    grid-template-columns: 2.6rem 1fr auto;
+    align-items: center;
+    gap: 1rem;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--live-d);
+    border-radius: 3px;
+    padding: .75rem 1rem;
+    text-decoration: none;
+    color: inherit;
+    transition: border-color .12s, background .12s, transform .12s;
+  }
+  .breaker:hover {
+    background: #221d16;
+    border-color: var(--line-2);
+    border-left-color: var(--live);
+    transform: translateX(2px);
+  }
+  .breaker.dead {
+    border-left-color: var(--dead);
+    opacity: .72;
+    cursor: not-allowed;
+  }
+  .breaker.dead:hover { transform: none; background: var(--panel); }
+
+  /* the little toggle switch */
+  .switch {
+    width: 20px; height: 30px;
+    background: #100e0a;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    position: relative;
+  }
+  .switch::after {
+    content: "";
+    position: absolute; left: 2px; right: 2px; height: 12px;
+    top: 2px;
+    border-radius: 2px;
+    background: linear-gradient(#f0c85a, #b8892a);
+    box-shadow: 0 1px 2px rgba(0,0,0,.6);
+  }
+  .breaker.dead .switch::after {
+    top: auto; bottom: 2px;
+    background: linear-gradient(#5a4034, #3a2a20);
+  }
+
+  .b-name {
+    font: 600 .95rem/1.2 var(--sans);
+    color: var(--text);
+  }
+  .b-id {
+    font: 400 .66rem/1 var(--mono);
+    color: var(--dimmer);
+    letter-spacing: .1em;
+    margin-top: .3rem;
+  }
+  .b-id .path { color: var(--cool); }
+  .breaker.dead .b-id { color: var(--dead); }
+
+  .b-state {
+    font: 700 .6rem/1 var(--mono); letter-spacing: .18em;
+    color: var(--live);
+  }
+  .breaker.dead .b-state { color: var(--dead); }
+
+  /* ---- footer notes ---------------------------------------------------- */
+
+  .notes {
+    margin-top: 2.4rem;
+    border-top: 1px solid var(--line);
+    padding-top: 1.2rem;
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+    gap: 1.4rem;
+    font-size: .76rem; line-height: 1.65; color: var(--dim);
+  }
+  .notes h3 {
+    font: 700 .58rem/1 var(--mono); letter-spacing: .2em;
+    color: var(--dimmer); margin: 0 0 .5rem;
+  }
+  .notes code {
+    font-family: var(--mono); font-size: .95em;
+    background: #100e0a; border: 1px solid var(--line);
+    padding: .08em .35em; border-radius: 2px; color: var(--text);
+  }
+  .notes b { color: var(--text); font-weight: 600; }
+
+  .warn {
+    margin-top: 1.6rem;
+    display: flex; gap: .8rem; align-items: flex-start;
+    font-size: .72rem; line-height: 1.6; color: var(--dimmer);
+  }
+  .warn svg { flex: none; margin-top: .1rem; }
+
+  .offline {
+    display: none;
+    background: #2a1a14; border: 1px solid var(--dead);
+    color: #e8a894; padding: .8rem 1rem; border-radius: 3px;
+    font: 400 .8rem/1.5 var(--sans); margin-bottom: 1.4rem;
+  }
+  body.stale .offline { display: block; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="offline">
+    <b>No answer from the server.</b> The power may have been cut, or the tab
+    was left open across a restart. The readouts below are the last ones taken.
+  </div>
+
+  <header>
+    <div class="plate">
+      <h1>MAINS</h1>
+      <div class="spec">120&#8202;V &#8901; 60&#8202;Hz &#8901; LOOPBACK ONLY</div>
+    </div>
+    <p class="tagline">
+      Power for the tree. Everything here still runs <b>on batteries</b> &mdash;
+      opened straight from disk, working with less. Through these circuits it
+      runs <b>on the mains</b>.
+    </p>
+    <div class="lamp" id="lamp">
+      <div class="bulb" id="bulb"></div>
+      <span id="lampText">LIVE</span>
+    </div>
+  </header>
+
+  <div class="instruments">
+    <div class="case meter-case">
+      <!-- An honest instrument: requests per minute, log-scaled, so a quiet
+           tree still moves the needle a little and a busy one does not peg. -->
+      <svg viewBox="0 0 200 132" aria-label="requests per minute">
+        <defs>
+          <radialGradient id="glass" cx="50%" cy="35%" r="75%">
+            <stop offset="0%"  stop-color="#2b2620"/>
+            <stop offset="100%" stop-color="#171410"/>
+          </radialGradient>
+        </defs>
+        <rect x="1" y="1" width="198" height="130" rx="3" fill="url(#glass)" stroke="#3a3126"/>
+        <!-- arc -->
+        <path d="M 28 104 A 74 74 0 0 1 172 104" fill="none" stroke="#3a3126" stroke-width="1.5"/>
+        <g id="ticks"></g>
+        <g id="labels"></g>
+        <!-- needle -->
+        <g id="needleGroup" transform="rotate(-90 100 104)">
+          <line x1="100" y1="104" x2="100" y2="40" stroke="#e8b33a" stroke-width="2.1" stroke-linecap="round"/>
+          <line x1="100" y1="104" x2="100" y2="115" stroke="#e8b33a" stroke-width="2.1" stroke-linecap="round"/>
+        </g>
+        <circle cx="100" cy="104" r="5.5" fill="#231f19" stroke="#4a4031"/>
+        <circle cx="100" cy="104" r="1.6" fill="#e8b33a"/>
+        <text x="100" y="76" text-anchor="middle" fill="#8a7f6d"
+              font-family="ui-monospace, Consolas, monospace" font-size="7"
+              letter-spacing="1.6">REQ / MIN</text>
+        <text x="100" y="124" text-anchor="middle" fill="#635a4c"
+              font-family="ui-monospace, Consolas, monospace" font-size="6"
+              letter-spacing="1.2">LOG SCALE</text>
+      </svg>
+    </div>
+
+    <div class="case readouts">
+      <div>
+        <div class="ro-label">HOURS RUN</div>
+        <div class="ro-value amber odo" id="uptime"></div>
+      </div>
+      <div>
+        <div class="ro-label">REQUESTS</div>
+        <div class="ro-value" id="reqs">&mdash;</div>
+      </div>
+      <div>
+        <div class="ro-label">DELIVERED</div>
+        <div class="ro-value" id="bytes">&mdash;</div>
+      </div>
+      <div>
+        <div class="ro-label">REFUSED</div>
+        <div class="ro-value" id="refused">&mdash;</div>
+      </div>
+      <div>
+        <div class="ro-label">PORT</div>
+        <div class="ro-value" id="port">&mdash;</div>
+      </div>
+      <div>
+        <div class="ro-label">VERSION</div>
+        <div class="ro-value" id="version">&mdash;</div>
+      </div>
+    </div>
+  </div>
+
+  <h2>CIRCUITS</h2>
+  <div class="breakers" id="breakers"></div>
+
+  <div class="warn">
+    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M8 1 L15 14 L1 14 Z" fill="none" stroke="#8a6716" stroke-width="1.2" stroke-linejoin="round"/>
+      <path d="M8 6 v4" stroke="#8a6716" stroke-width="1.4" stroke-linecap="round"/>
+      <circle cx="8" cy="12" r=".8" fill="#8a6716"/>
+    </svg>
+    <div>
+      Read-only. <code>GET</code> and <code>HEAD</code> are the only methods
+      this server implements, it binds <code>127.0.0.1</code> and nothing else,
+      and nothing outside a declared circuit is reachable at any depth.
+      Writing to disk is a later, separate circuit.
+    </div>
+  </div>
+
+  <div class="notes">
+    <div>
+      <h3>FOR AN ARTIFACT</h3>
+      Include <code>client/mains.js</code> by relative path &mdash; it works
+      from either power source &mdash; then branch on
+      <code>Mains.plugged</code>. Read <code>Mains.help()</code> in a console
+      for the rest. An artifact must never <b>require</b> the mains: if cutting
+      the power breaks it, the artifact is wrong.
+    </div>
+    <div>
+      <h3>FOR A CIRCUIT</h3>
+      One line in <code>mains.json</code>. Roots only, never files &mdash; what
+      is inside a circuit is answered by the filesystem at the moment it is
+      asked, so this list cannot go stale the way a catalog can. A vanished
+      root is reported <b>DEAD</b> here rather than quietly dropped.
+    </div>
+    <div>
+      <h3>TO CUT THE POWER</h3>
+      <code>ctrl-c</code> in the terminal running it. Everything in the tree
+      keeps working immediately afterward, on batteries, because that is the
+      only property this project is not allowed to break.
+    </div>
+  </div>
+
+</div>
+
+<script src="/_mains/client.js"></script>
+<script>
+(function () {
+  'use strict'
+
+  var $ = function (id) { return document.getElementById(id) }
+
+  // ---- meter geometry: -90deg at zero, +90deg at full scale -------------
+  var MIN_ANGLE = -90, MAX_ANGLE = 90, FULL_SCALE = 300  // req/min at peg
+
+  function angleFor (rpm) {
+    var t = Math.log10(1 + Math.max(0, rpm)) / Math.log10(1 + FULL_SCALE)
+    return MIN_ANGLE + Math.min(1, t) * (MAX_ANGLE - MIN_ANGLE)
+  }
+
+  // Draw ticks at values that mean something on a log scale.
+  ;(function drawTicks () {
+    var ticks = [0, 1, 3, 10, 30, 100, 300]
+    var g = $('ticks'), lg = $('labels'), ns = 'http://www.w3.org/2000/svg'
+    ticks.forEach(function (v) {
+      var a = angleFor(v) * Math.PI / 180
+      var cx = 100, cy = 104, r1 = 74, r2 = 67
+      var sx = cx + Math.sin(a) * r1, sy = cy - Math.cos(a) * r1
+      var ex = cx + Math.sin(a) * r2, ey = cy - Math.cos(a) * r2
+      var ln = document.createElementNS(ns, 'line')
+      ln.setAttribute('x1', sx.toFixed(1)); ln.setAttribute('y1', sy.toFixed(1))
+      ln.setAttribute('x2', ex.toFixed(1)); ln.setAttribute('y2', ey.toFixed(1))
+      ln.setAttribute('stroke', '#6b6152'); ln.setAttribute('stroke-width', '1.2')
+      g.appendChild(ln)
+      var tx = cx + Math.sin(a) * 59, ty = cy - Math.cos(a) * 59 + 2.4
+      var tt = document.createElementNS(ns, 'text')
+      tt.setAttribute('x', tx.toFixed(1)); tt.setAttribute('y', ty.toFixed(1))
+      tt.setAttribute('text-anchor', 'middle')
+      tt.setAttribute('fill', '#635a4c')
+      tt.setAttribute('font-family', 'ui-monospace, Consolas, monospace')
+      tt.setAttribute('font-size', '6.5')
+      tt.textContent = String(v)
+      lg.appendChild(tt)
+    })
+  })()
+
+  // ---- formatting --------------------------------------------------------
+  function bytesText (n) {
+    if (n == null) return '&mdash;'
+    var u = ['B', 'KB', 'MB', 'GB'], i = 0, v = n
+    while (v >= 1024 && i < u.length - 1) { v /= 1024; i++ }
+    return (i === 0 ? v : v.toFixed(1)) + '<span class="ro-unit">' + u[i] + '</span>'
+  }
+
+  function odometer (seconds) {
+    var h = Math.floor(seconds / 3600)
+    var m = Math.floor((seconds % 3600) / 60)
+    var s = Math.floor(seconds % 60)
+    var str = String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0')
+    return str.split('').map(function (c) {
+      return c === ':' ? '<i class="sep">:</i>' : '<i>' + c + '</i>'
+    }).join('')
+  }
+
+  // ---- breakers ----------------------------------------------------------
+  var drawnCircuits = ''
+  function drawBreakers (circuits) {
+    var key = JSON.stringify(circuits)
+    if (key === drawnCircuits) return
+    drawnCircuits = key
+    var host = $('breakers')
+    host.innerHTML = ''
+    circuits.forEach(function (c) {
+      var el = document.createElement(c.live ? 'a' : 'div')
+      el.className = 'breaker' + (c.live ? '' : ' dead')
+      if (c.live) el.href = '/' + encodeURIComponent(c.id) + '/'
+      el.innerHTML =
+        '<div class="switch"></div>' +
+        '<div><div class="b-name"></div>' +
+        '<div class="b-id"></div></div>' +
+        '<div class="b-state">' + (c.live ? 'CLOSED' : 'OPEN') + '</div>'
+      el.querySelector('.b-name').textContent = c.name
+      var id = el.querySelector('.b-id')
+      if (c.live) {
+        id.innerHTML = '<span class="path"></span>'
+        id.querySelector('.path').textContent = '/' + c.id + '/'
+      } else {
+        id.textContent = 'root ' + c.note
+      }
+      host.appendChild(el)
+    })
+  }
+
+  // ---- polling -----------------------------------------------------------
+  var lastReqs = null, lastAt = null, rpm = 0, shownAngle = -90
+
+  function paint (s) {
+    document.body.classList.remove('stale')
+    $('bulb').classList.remove('out')
+    $('lamp').classList.remove('out')
+    $('lampText').textContent = 'LIVE'
+
+    $('uptime').innerHTML  = odometer(s.uptimeSeconds)
+    $('reqs').textContent  = s.meter.requests.toLocaleString()
+    $('bytes').innerHTML   = bytesText(s.meter.bytes)
+    $('refused').textContent = s.meter.refused.toLocaleString()
+    $('port').textContent  = s.port
+    $('version').textContent = s.version
+    drawBreakers(s.circuits)
+
+    var now = Date.now()
+    if (lastReqs !== null && now > lastAt) {
+      var inst = (s.meter.requests - lastReqs) / ((now - lastAt) / 60000)
+      rpm = rpm * 0.55 + inst * 0.45          // smoothed, like a real movement
+    }
+    lastReqs = s.meter.requests
+    lastAt = now
+  }
+
+  function goStale () {
+    document.body.classList.add('stale')
+    $('bulb').classList.add('out')
+    $('lamp').classList.add('out')
+    $('lampText').textContent = 'NO ANSWER'
+    rpm = 0
+  }
+
+  // Needle movement is animated independently of polling so it sweeps rather
+  // than snaps — a panel meter that teleports reads as a number, not a gauge.
+  ;(function sweep () {
+    var target = angleFor(rpm)
+    shownAngle += (target - shownAngle) * 0.12
+    $('needleGroup').setAttribute('transform', 'rotate(' + shownAngle.toFixed(2) + ' 100 104)')
+    requestAnimationFrame(sweep)
+  })()
+
+  function tick () {
+    if (!window.Mains || !window.Mains.plugged) { goStale(); return }
+    window.Mains.status().then(function (s) {
+      if (s && s.mains) paint(s)
+      else goStale()
+    }).catch(goStale)
+  }
+
+  tick()
+  setInterval(tick, 1000)
+})()
+</script>
+</body>
+</html>

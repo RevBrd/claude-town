@@ -1,0 +1,56 @@
+{
+  "_comment": [
+    "Mains' circuit map, and the ONLY hand-written list in the project.",
+    "",
+    "It lists ROOTS, never files. What is inside a circuit is never enumerated",
+    "here and never cached; the filesystem answers every request at the moment",
+    "it is asked. Same reasoning as Marquee's venue.json: a list kept in a",
+    "folder nobody opens is a list that drifts.",
+    "",
+    "NOTHING OUTSIDE A DECLARED CIRCUIT IS REACHABLE. There is no fallback",
+    "root, no parent-directory escape, and no 'serve everything under",
+    "Projects' mode. Adding a folder to the network is a deliberate act with a",
+    "line in this file, never an accident of where the server happens to sit.",
+    "That is the whole security model and it is worth more than any amount of",
+    "path filtering, because it fails closed.",
+    "",
+    "Every root is validated on boot. A circuit whose folder has vanished is",
+    "reported as DEAD on the panel and returns 503 — it is never silently",
+    "dropped, because a missing room you can see is a bug report and a missing",
+    "room you cannot see is a mystery.",
+    "",
+    "PORT 12060 is not arbitrary: 120 volts, 60 hertz.",
+    "",
+    "Paths are relative to this file. Absolute paths are also accepted."
+  ],
+
+  "port": 12060,
+
+  "circuits": [
+    {
+      "id": "town",
+      "name": "Claude Town",
+      "root": ".."
+    },
+    {
+      "id": "games",
+      "name": "Games",
+      "root": "../../Games"
+    },
+    {
+      "id": "tools",
+      "name": "Misc Tools",
+      "root": "../../Misc Tools"
+    },
+    {
+      "id": "ksp",
+      "name": "KSP Tools",
+      "root": "../../KSP Tools"
+    },
+    {
+      "id": "shim",
+      "name": "Shim",
+      "root": "../../../.claude/Pet"
+    }
+  ]
+}
