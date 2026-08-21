@@ -1,0 +1,3 @@
+# scratch copies written by the mutation suite; deleted on a clean run,
+# tracked here so a crashed run cannot leave one in a commit.
+.mutant-*.tmp.js

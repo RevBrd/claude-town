@@ -1,0 +1,10 @@
+{
+  "_note": "Roots, never repos. What is inside a root is answered by the filesystem at the moment it is asked, so this file cannot go stale the way a list of repos would. Same reasoning as Marquee's venue.json and Mains' mains.json.",
+  "roots": [
+    { "path": "~/Projects", "depth": 2 },
+    { "path": "~/.claude",  "depth": 2 }
+  ],
+  "_depth": "How many folder levels below the root to descend looking for .git. A repo found part-way down is NOT pruned -- the scan keeps going, because ~/.claude is a repo that contains another repo (Pet), and stopping at the first hit would hide it.",
+  "_skip": "Folder names never descended into.",
+  "skip": [".git", "node_modules", "backups", "projects", "todos", "shell-snapshots", "statsig", "file-history"]
+}
