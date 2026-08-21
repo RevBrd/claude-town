@@ -4,3 +4,8 @@
 # next to it. Regenerate with `node tools/derive.js --write` and commit the
 # result — the `generated` timestamp means every regeneration is a diff, which
 # is the price of the page working by double-click.)
+
+# Scratch copies written by the test harnesses and deleted on a clean run.
+# Tracked here so a crashed run cannot leave one in a commit.
+.smoke-tmp.html
+.agree-tmp.html

@@ -154,9 +154,15 @@ what happens when two pages write at once — and it did not get to ride along w
 turned the power on. When it arrives it should be its own circuit with its own mutants, not a
 `POST` bolted onto this one.
 
-**Marquee still regenerates its manifest with `--write`.** Now that `/_mains/list/` exists it could
-scan live and drop the stale-until-someone-runs-node wart. That is a change to Marquee, not to
-Mains, and it belongs in a pass that can test it there.
+~~**Marquee still regenerates its manifest with `--write`.**~~ **Done, 20 Aug 2026.** Marquee now
+derives its whole catalog live in the browser when it is on the mains, running the same
+`derive.js` the terminal runs, behind an I/O seam. `Marquee/tools/agree.js` asserts the two agree
+by diffing the manifests. Two Mains features turned out to be load-bearing there rather than
+polite: **Range requests** (sniffing a `<title>` out of a 47 KB game without fetching 47 KB) and
+**full-precision `mtime` in `/_mains/list/`** (HTTP's `Last-Modified` is RFC 1123 and only has
+one-second granularity, which made the live manifest disagree with node on every single entry).
+That pass also added `root` to each circuit in `/_mains/status` — see the note in `server.js` for
+why that costs nothing an attacker did not already have.
 
 **Nothing starts this automatically.** On purpose, for now — a background service is a thing that
 is running when you didn't ask it to be, and that decision is Trevor's rather than a default.

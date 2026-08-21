@@ -501,7 +501,18 @@ function makeHandler (state) {
         port,
         uptimeSeconds: Math.round((Date.now() - meter.started) / 1000),
         meter: { requests: meter.requests, bytes: meter.bytes, refused: meter.refused },
-        circuits: circuits.map(c => ({ id: c.id, name: c.name, live: c.live, note: c.note })),
+        // `root` is the real filesystem path. It is here because a page that
+        // wants to reason about the tree — Marquee derives its whole catalog
+        // this way — has to be able to turn an absolute path from a config
+        // file into a circuit URL, and it cannot invent that mapping without
+        // being told. Exposing it adds nothing an attacker did not already
+        // have: anything that can read this endpoint can already read the
+        // CONTENTS of all five circuits, which is strictly worse than knowing
+        // where they sit. The same-origin and Host checks are what stand
+        // between a foreign page and both.
+        circuits: circuits.map(c => ({
+          id: c.id, name: c.name, live: c.live, note: c.note, root: c.root,
+        })),
       })
     }
     if (rawPath === '/_mains/client.js') {

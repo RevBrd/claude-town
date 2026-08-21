@@ -470,7 +470,10 @@
 
 <script src="manifest.js"></script>
 <script>
-(function () {
+// The page body is a function rather than an IIFE so that boot can be delayed
+// by exactly as long as it takes to ask the tree what is in it. Off the mains
+// that is no time at all and this runs on the next line. See the prelude below.
+function marqueeBoot() {
   'use strict';
 
   var M     = window.MARQUEE_MANIFEST || null;
@@ -817,12 +820,27 @@
       if (w.missing) rows.push('ROOM ROOT MISSING           ' + w.id + ' — ' + w.root);
     });
 
+    // Where this catalog came from, stated plainly. A page that derived live
+    // and a page reading a manifest from three days ago look identical, and
+    // the difference is exactly the kind of thing this project exists to
+    // report rather than hide.
+    function sourceLine() {
+      var s = window.MARQUEE_SOURCE || { live: false, why: 'unknown' };
+      if (s.live) {
+        return 'derived live from the tree  (' + s.passes + ' passes, ' +
+               s.requests + ' requests, ' + s.ms + ' ms)';
+      }
+      return 'generated manifest.js  —  ' + s.why +
+             (s.why === 'on batteries' ? '' : '  [live derivation failed]');
+    }
+
     var d = document.createElement('details');
     d.className = 'drift';
     var n = uncat.length + amb.length + rows.length;
     d.appendChild(el('summary', null, 'House records  —  ' + n + ' item' + (n === 1 ? '' : 's') + ' adrift'));
     d.appendChild(el('div', 'body', [
       'floor plan          ' + M.venue,
+      'catalog source      ' + sourceLine(),
       'manifest generated  ' + M.generated,
       'rooms               ' + M.wings.map(function (w) { return w.id + '(' + (w.count || 0) + ')'; }).join('  '),
       '',
@@ -925,6 +943,62 @@
   here = remembered || (first || {}).id;
   setRoom(here, false);
   q.focus();
+}
+</script>
+
+<!--
+  THE PRELUDE — where the catalog comes from.
+
+  On batteries (file://) this does nothing at all: manifest.js has already
+  assigned window.MARQUEE_MANIFEST and the page boots on the next line, exactly
+  as it did before any of this existed. That path is not allowed to regress.
+
+  On the mains, the same derivation that tools/derive.js runs in the terminal is
+  run here, over the live tree, and its result replaces the generated manifest.
+  The stale-until-someone-remembers-to-run-node window closes.
+
+  If anything at all goes wrong it falls back to the generated manifest AND SAYS
+  SO on the page. A launcher that silently showed you a three-day-old catalog
+  while looking freshly derived would be a worse failure than not trying.
+-->
+<!--
+  The Mains shim by RELATIVE path, not /_mains/client.js. Both resolve on the
+  mains, but only this one also resolves on batteries — from file:// the
+  absolute form asks for file:///_mains/client.js and logs a network error on
+  every open. Working from either power source is the whole contract the shim
+  advertises, so this page had better include it the way it says to.
+-->
+<script src="../Mains/client/mains.js"></script>
+<script src="tools/derive.js"></script>
+<script src="tools/live.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  var plugged = window.Mains && window.Mains.plugged && window.MarqueeLive;
+
+  if (!plugged) {
+    window.MARQUEE_SOURCE = { live: false, why: 'on batteries' };
+    marqueeBoot();
+    return;
+  }
+
+  var t0 = Date.now();
+  window.MarqueeLive.derive().then(function (res) {
+    res.manifest.generated = new Date().toISOString();
+    window.MARQUEE_MANIFEST = res.manifest;
+    window.MARQUEE_SOURCE = {
+      live: true,
+      passes: res.passes,
+      requests: res.requests,
+      ms: Date.now() - t0,
+    };
+  }).catch(function (e) {
+    // Keep whatever manifest.js left behind, and record why this is not live.
+    window.MARQUEE_SOURCE = { live: false, why: String(e && e.message || e) };
+  }).then(function () {
+    marqueeBoot();
+  });
 })();
 </script>
 </body>

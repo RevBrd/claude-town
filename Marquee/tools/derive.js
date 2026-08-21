@@ -67,8 +67,146 @@
 
 'use strict';
 
-const fs = require('fs');
-const path = require('path');
+// ---------------------------------------------------------------------------
+// THE I/O SEAM
+//
+// This file used to call fs.* directly in a dozen places. It no longer does,
+// and the reason is the rule the Pet already established: derive everything
+// with one fold that both front-ends share VERBATIM, so the terminal and the
+// browser cannot disagree — because disagreeing would require running
+// different code.
+//
+// Everything below the seam is pure derivation and knows nothing about where
+// bytes come from. Above it are exactly four primitives:
+//
+//   IO.readText(p, maxBytes)  -> string | null
+//   IO.readDir(p)             -> [{ name, isDirectory, isFile }] | null
+//   IO.exists(p)              -> boolean
+//   IO.stat(p)                -> { size, mtime } | null   (mtime is ISO text)
+//
+// Under node they are backed by fs. In a browser they are backed by Mains
+// (see tools/live.js). A second implementation of the SCAN would drift from
+// this one the way a second catalog drifts from the first — which is the
+// thing this whole project exists to not do. A second implementation of
+// "read a directory" cannot drift, because there is nothing in it to be
+// wrong about.
+//
+// The CLI is guarded on `require` existing, so loading this file with a plain
+// <script src> is safe: it defines the same functions and leaves IO unset for
+// the caller to install.
+// ---------------------------------------------------------------------------
+
+const IS_NODE = (typeof require === 'function' && typeof module === 'object' && !!module.exports);
+
+// A posix-only stand-in for node's `path`, used when there isn't one. Mains
+// addresses everything with forward slashes, so posix semantics are not an
+// approximation here — they are exactly right.
+const posixPath = {
+  sep: '/',
+  normalizeParts: function (parts, allowAbove) {
+    const out = [];
+    for (const p of parts) {
+      if (p === '' || p === '.') continue;
+      if (p === '..') {
+        if (out.length && out[out.length - 1] !== '..') out.pop();
+        else if (allowAbove) out.push('..');
+      } else out.push(p);
+    }
+    return out;
+  },
+  join: function () {
+    const raw = Array.prototype.slice.call(arguments).filter(s => s !== '' && s != null).join('/');
+    const abs = raw.charAt(0) === '/';
+    const parts = posixPath.normalizeParts(raw.split('/'), !abs);
+    return (abs ? '/' : '') + parts.join('/') || (abs ? '/' : '.');
+  },
+  resolve: function () {
+    const args = Array.prototype.slice.call(arguments);
+    let acc = [];
+    let abs = false;
+    for (let i = args.length - 1; i >= 0 && !abs; i--) {
+      const seg = String(args[i] || '');
+      if (!seg) continue;
+      acc = seg.split('/').concat(acc);
+      if (seg.charAt(0) === '/') abs = true;
+    }
+    if (!abs) acc = String(posixPath.cwd || '/').split('/').concat(acc);
+    return '/' + posixPath.normalizeParts(acc, false).join('/');
+  },
+  basename: function (p) {
+    const parts = String(p).split('/').filter(Boolean);
+    return parts.length ? parts[parts.length - 1] : '';
+  },
+  dirname: function (p) {
+    const parts = String(p).split('/').filter(Boolean);
+    parts.pop();
+    return '/' + parts.join('/');
+  },
+  relative: function (from, to) {
+    const a = posixPath.resolve(from).split('/').filter(Boolean);
+    const b = posixPath.resolve(to).split('/').filter(Boolean);
+    let i = 0;
+    while (i < a.length && i < b.length && a[i] === b[i]) i++;
+    return a.slice(i).map(() => '..').concat(b.slice(i)).join('/');
+  },
+  cwd: '/',
+};
+
+const path = IS_NODE ? require('path') : posixPath;
+
+// The node-backed reader. The only place in this file that knows what a disk
+// is, and it is deliberately dull — every interesting decision is below.
+function nodeIO() {
+  const fs = require('fs');
+  return {
+    name: 'node',
+    readText: function (p, maxBytes) {
+      try {
+        if (maxBytes == null) return fs.readFileSync(p, 'utf8');
+        const fd = fs.openSync(p, 'r');
+        const buf = Buffer.alloc(maxBytes);
+        const n = fs.readSync(fd, buf, 0, maxBytes, 0);
+        fs.closeSync(fd);
+        return buf.slice(0, n).toString('utf8');
+      } catch { return null; }
+    },
+    readDir: function (p) {
+      try {
+        // isFile is carried separately rather than derived as !isDirectory:
+        // a symlink is neither, and collapsing the two would quietly promote
+        // one into a work.
+        return fs.readdirSync(p, { withFileTypes: true })
+          .map(d => ({ name: d.name, isDirectory: d.isDirectory(), isFile: d.isFile() }));
+      } catch { return null; }
+    },
+    exists: function (p) {
+      try { return fs.existsSync(p); } catch { return false; }
+    },
+    stat: function (p) {
+      try {
+        const st = fs.statSync(p);
+        return { size: st.size, mtime: st.mtime.toISOString() };
+      } catch { return null; }
+    },
+  };
+}
+
+// path.resolve(__dirname, '..') is the node-only default for "where the venue
+// lives". A browser has no __dirname, and referencing it would throw at parse
+// time rather than politely returning undefined.
+const DEFAULT_FROM_DIR = (typeof __dirname === 'string') ? path.resolve(__dirname, '..') : '.';
+
+let IO = IS_NODE ? nodeIO() : null;
+
+// Swap the reader. Returns the previous one, so a caller can put it back —
+// the selftest depends on that to run fixture and live readers in one process.
+function setIO(next) {
+  const prev = IO;
+  IO = next;
+  return prev;
+}
+
+function getIO() { return IO; }
 
 // ---------------------------------------------------------------------------
 // Tunables. Kept together and named so they can be adjusted without reading
@@ -141,16 +279,7 @@ const TUNE = {
 // ---------------------------------------------------------------------------
 
 function readTextSafe(p, maxBytes) {
-  try {
-    if (maxBytes == null) return fs.readFileSync(p, 'utf8');
-    const fd = fs.openSync(p, 'r');
-    const buf = Buffer.alloc(maxBytes);
-    const n = fs.readSync(fd, buf, 0, maxBytes, 0);
-    fs.closeSync(fd);
-    return buf.slice(0, n).toString('utf8');
-  } catch {
-    return null;
-  }
+  return IO.readText(p, maxBytes);
 }
 
 // Catalog links are hand-written and inconsistent: "Dead Space/" sits next to
@@ -279,8 +408,10 @@ function parseCatalog(catalogPath) {
 function byCodepoint(a, b) { return a < b ? -1 : a > b ? 1 : 0; }
 
 function listFolders(root) {
-  return fs.readdirSync(root, { withFileTypes: true })
-    .filter(d => d.isDirectory() && d.name.charAt(0) !== '.')
+  const entries = IO.readDir(root);
+  if (!entries) throw new Error('root not readable: ' + root);
+  return entries
+    .filter(d => d.isDirectory && d.name.charAt(0) !== '.')
     .map(d => d.name)
     .sort(byCodepoint);
 }
@@ -288,11 +419,10 @@ function listFolders(root) {
 // Top level only. GemTD/Old Versions/ holds six playable-looking builds and
 // none of them is the game; depth is where history lives.
 function listEntryCandidates(dir) {
-  let entries;
-  try { entries = fs.readdirSync(dir, { withFileTypes: true }); }
-  catch { return []; }
+  const entries = IO.readDir(dir);
+  if (!entries) return [];
   return entries
-    .filter(d => d.isFile() && isHtml(d.name))
+    .filter(d => d.isFile && isHtml(d.name))
     .map(d => d.name)
     .sort(byCodepoint);
 }
@@ -302,10 +432,10 @@ function listEntryCandidates(dir) {
 // is supposed to have one — counting it makes an empty folder look occupied,
 // which is the opposite of the question being asked.
 function countOtherFiles(dir) {
-  try {
-    return fs.readdirSync(dir, { withFileTypes: true })
-      .filter(d => d.isFile() && !isHtml(d.name) && d.name.toLowerCase() !== 'claude.md').length;
-  } catch { return 0; }
+  const entries = IO.readDir(dir);
+  if (!entries) return 0;
+  return entries
+    .filter(d => d.isFile && !isHtml(d.name) && d.name.toLowerCase() !== 'claude.md').length;
 }
 
 // ---------------------------------------------------------------------------
@@ -326,7 +456,7 @@ function countOtherFiles(dir) {
 // ---------------------------------------------------------------------------
 function readDoc(dir) {
   const p = path.join(dir, 'CLAUDE.md');
-  return { path: p, text: readTextSafe(p), exists: fs.existsSync(p) };
+  return { path: p, text: readTextSafe(p), exists: IO.exists(p) };
 }
 
 function parseDeclaration(docText) {
@@ -421,7 +551,7 @@ function resolveEntry(dir, candidates, declaration) {
   }
   if (declaration.play) {
     const exists = candidates.indexOf(declaration.play) >= 0 ||
-                   fs.existsSync(path.join(dir, declaration.play));
+                   IO.exists(path.join(dir, declaration.play));
     return {
       entry: exists ? declaration.play : null,
       entryStatus: exists ? 'ok' : 'declared-missing',
@@ -445,11 +575,9 @@ function describeFolder(dir, folder, row, fromDir) {
   let bytes = null, modified = null, title = null, url = null;
   if (resolved.entry) {
     const full = path.join(dir, resolved.entry);
-    try {
-      const st = fs.statSync(full);
-      bytes = st.size;
-      modified = st.mtime.toISOString();
-    } catch { /* resolved but unstattable — status stays ok, numbers stay null */ }
+    const st = IO.stat(full);
+    if (st) { bytes = st.size; modified = st.mtime; }
+    // resolved but unstattable — status stays ok, numbers stay null
     title = extractTitle(full);
     // Built here rather than in the page. The launcher opens from file://, and
     // these folder names include spaces, an apostrophe, four exclamation marks
@@ -504,8 +632,8 @@ function describeFolder(dir, folder, row, fromDir) {
 // ---------------------------------------------------------------------------
 function deriveWing(opts) {
   const root = path.resolve(opts.gamesRoot || opts.root);
-  if (!fs.existsSync(root)) throw new Error('root not found: ' + root);
-  const fromDir = path.resolve(opts.fromDir || path.resolve(__dirname, '..'));
+  if (!IO.exists(root)) throw new Error('root not found: ' + root);
+  const fromDir = path.resolve(opts.fromDir || DEFAULT_FROM_DIR);
   const annex = (opts.annex || []).map(p => path.resolve(p));
 
   const catalog = parseCatalog(path.join(root, 'CLAUDE.md'));
@@ -547,7 +675,7 @@ function deriveWing(opts) {
 // ---------------------------------------------------------------------------
 function deriveResident(spec, fromDir) {
   const dir = path.resolve(fromDir, spec.path);
-  if (!fs.existsSync(dir)) {
+  if (!IO.exists(dir)) {
     return { missing: true, folder: path.basename(spec.path), display: spec.name || path.basename(spec.path) };
   }
   const rec = describeFolder(dir, path.basename(dir), null, fromDir);
@@ -567,7 +695,9 @@ function deriveResident(spec, fromDir) {
 function deriveVenue(opts) {
   const venuePath = path.resolve(opts.venue);
   const fromDir = path.dirname(venuePath);
-  const plan = JSON.parse(fs.readFileSync(venuePath, 'utf8'));
+  const planText = IO.readText(venuePath);
+  if (planText == null) throw new Error('venue not readable: ' + venuePath);
+  const plan = JSON.parse(planText);
   const planWings = plan.wings || [];
 
   const wingRoots = planWings.map(w => path.resolve(fromDir, w.root));
@@ -688,7 +818,10 @@ function arg(name, dflt) {
 }
 function flag(name) { return process.argv.indexOf('--' + name) >= 0; }
 
-if (require.main === module) {
+// IS_NODE first, so that loading this file with <script src> never evaluates
+// `require.main` — which would throw rather than politely be undefined.
+if (IS_NODE && require.main === module) {
+  const fs = require('fs');
   const ROOT = path.resolve(__dirname, '..');
   const oneRoot = arg('games', null);
 
@@ -737,8 +870,16 @@ if (require.main === module) {
   process.exit(broken || (flag('strict') && drift) ? 1 : 0);
 }
 
-module.exports = {
+// The same surface, under both loaders. In node it is module.exports; in a
+// browser it is one global, because this file is loaded with a classic
+// <script src> and ES modules are blocked from file:// — the constraint
+// `building.md` measured rather than assumed.
+const API = {
   deriveVenue, deriveWing, deriveResident, derive: deriveWing,
   report, parseCatalog, parseDeclaration, listEntryCandidates, resolveEntry,
   decodeTarget, encodeUrl, parsePoster, contrastRatio, TUNE,
+  setIO, getIO, nodeIO, posixPath, IS_NODE,
 };
+
+if (IS_NODE) module.exports = API;
+else if (typeof window !== 'undefined') window.MarqueeDerive = API;

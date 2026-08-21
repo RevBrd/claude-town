@@ -305,6 +305,10 @@ async function runSuite (mod, fx, opts) {
     const stj = JSON.parse(st.body)
     ok(st.status === 200 && stj.mains === true, 'api: status identifies the server as mains')
     ok(Array.isArray(stj.circuits) && stj.circuits.length === 3, 'api: status reports every circuit')
+    ok(stj.circuits.every(c => typeof c.root === 'string' && c.root.length),
+       'api: status names each circuit root, so a page can map a path to a URL')
+    ok(stj.circuits.find(c => c.id === 'safe').root === path.join(fx.root, 'safe'),
+       'api: the reported root is the real resolved path')
 
     const jl = await get('/_mains/list/safe')
     const jlj = JSON.parse(jl.body)

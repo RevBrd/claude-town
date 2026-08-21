@@ -286,12 +286,18 @@ const MUTANTS = [
   },
   {
     name: 'M4  entry scan recurses one level into subfolders',
-    find: '  return entries\n    .filter(d => d.isFile() && isHtml(d.name))\n    .map(d => d.name)',
+    // Updated 20 Aug 2026, when derive.js moved behind the I/O seam. The RULE
+    // this guards is unchanged — entry candidates are top level only — but the
+    // mechanism it has to break is now IO.readDir rather than fs.readdirSync.
+    // Note the suite SKIPped rather than silently passing, which is the
+    // behaviour to keep: a mutant that cannot be applied has not been caught.
+    find: '  return entries\n    .filter(d => d.isFile && isHtml(d.name))\n    .map(d => d.name)',
     repl: '  const deep = [];\n' +
-          '  for (const d of entries) if (d.isDirectory()) {\n' +
-          '    try { for (const f of fs.readdirSync(path.join(dir, d.name))) if (isHtml(f)) deep.push(f); } catch {}\n' +
+          '  for (const d of entries) if (d.isDirectory) {\n' +
+          '    const sub = IO.readDir(path.join(dir, d.name)) || [];\n' +
+          '    for (const f of sub) if (f.isFile && isHtml(f.name)) deep.push(f.name);\n' +
           '  }\n' +
-          '  return entries\n    .filter(d => d.isFile() && isHtml(d.name))\n    .map(d => d.name).concat(deep)',
+          '  return entries\n    .filter(d => d.isFile && isHtml(d.name))\n    .map(d => d.name).concat(deep)',
     expect: 'subfolder html is not a candidate',
   },
   {
