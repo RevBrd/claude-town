@@ -59,7 +59,7 @@ function rawGit(dir, args) {
 
 /* ------------------------------------------------------------------- suite */
 
-function suite(TK) {
+function suite(TK, W, SIT) {
 
   section('the read-only guarantee');
 
@@ -299,8 +299,10 @@ function suite(TK) {
   ok(lines.length > 5, 'the readout has content');
   eq(lines.filter(function (l) { return /\s$/.test(l); }).length, 0,
      'no rendered line has trailing whitespace');
-  ok(lines.join('\n').indexOf('read-only') !== -1,
-     'the readout says out loud that it cannot write');
+  /* The glance has to state its own limits, because a tool that can commit
+   * and a tool that can also revert look identical from the outside. */
+  ok(/cannot restore, reset or undo|restore, reset or undo/.test(lines.join('\n')),
+     'the readout says out loud that it cannot undo your work');
 
   var plainState = JSON.parse(JSON.stringify(state));
   plainState.totals = { repos: 3, dirty: 0, files: 0, empty: 0, errors: 0, oldest: null };
@@ -338,6 +340,232 @@ function suite(TK) {
   ok(s.repos.every(function (r) { return typeof r.label === 'string' && r.label.length; }),
      'every repo has a label');
   ok(TK.render(s).length > 0, 'and the real state renders');
+
+  /* ================================================================== write */
+
+  section('what write.js may do');
+
+  eq(W.WRITE_VERBS.slice().sort(), ['add', 'commit'],
+     'WRITE_VERBS is exactly add and commit');
+
+  ['restore', 'checkout', 'reset', 'clean', 'rm', 'stash', 'push',
+   'rebase', 'merge', 'revert', 'filter-branch'].forEach(function (v) {
+    throws(function () { W.gitWrite(TMP, [v]); }, 'gitWrite refuses `git ' + v + '`');
+  });
+
+  /* Pass 2a cannot undo anything. When 2b arrives it widens WRITE_VERBS and
+   * updates the assertion above in the same commit -- deliberately, in one
+   * visible place, exactly like READ_ONLY_VERBS. */
+  ok(W.WRITE_VERBS.indexOf('restore') === -1 &&
+     W.WRITE_VERBS.indexOf('checkout') === -1 &&
+     W.WRITE_VERBS.indexOf('reset') === -1,
+     'nothing in pass 2a can undo your work');
+
+  section('add -A is inexpressible');
+
+  ['-A', '--all', '-a', '-u', '--update', '.', '*', ':/'].forEach(function (spec) {
+    throws(function () { W.gitWrite(TMP, ['add', spec]); },
+           'a wholesale pathspec is refused: ' + spec);
+  });
+  throws(function () { W.assertNoWholesale(['add', 'ok.txt', '-A']); },
+         'and it is refused wherever in the arguments it appears');
+  ok(W.WHOLESALE.indexOf('-A') !== -1, '-A is on the wholesale list by name');
+
+  section('paths cannot be flags or escapes');
+
+  throws(function () { W.assertSafePath('../outside.txt'); }, 'a path may not escape upward');
+  throws(function () { W.assertSafePath('..'); }, 'nor be .. alone');
+  throws(function () { W.assertSafePath('--force'); }, 'nor look like a flag');
+  throws(function () { W.assertSafePath(''); }, 'nor be empty');
+  throws(function () { W.assertSafePath(path.join(TMP, 'abs.txt')); }, 'nor be absolute');
+  eq(W.assertSafePath('sub/fine.txt'), 'sub/fine.txt', 'an ordinary relative path is fine');
+  eq(W.assertSafePath('a file with spaces.md'), 'a file with spaces.md', 'spaces are fine');
+
+  section('the Pet folder is blocked for restore, not for commit');
+
+  var petDir = path.join(os.homedir(), '.claude', 'Pet');
+  ok(W.isBlockedForRestore(petDir), 'the Pet folder is blocked');
+  ok(W.isBlockedForRestore(path.join(petDir, 'tools')), 'and so is anything under it');
+  ok(!W.isBlockedForRestore(path.join(os.homedir(), '.claude')),
+     'but not its parent -- .claude itself is an ordinary repo');
+  ok(!W.isBlockedForRestore(path.join(os.homedir(), '.claude', 'Petunia')),
+     'and not a sibling whose name merely starts the same way');
+  ok(W.WRITE_VERBS.indexOf('commit') !== -1,
+     'commit is allowed everywhere, including the Pet -- committing log.js is ' +
+     'what preserves a visit, so refusing would leave it at risk');
+
+  section('commit messages');
+
+  var mkf = function (p, state, xy) { return { path: p, state: state, xy: xy || '.M' }; };
+  eq(W.defaultMessage([mkf('CLAUDE.md', 'tracked')]), 'update CLAUDE.md',
+     'one modified file');
+  eq(W.defaultMessage([mkf('new.txt', 'untracked', '??')]), 'add new.txt',
+     'one new file');
+  eq(W.defaultMessage([mkf('gone.txt', 'tracked', '.D')]), 'remove gone.txt',
+     'one deleted file');
+  eq(W.defaultMessage([mkf('a.md', 'tracked'), mkf('b.md', 'untracked', '??')]),
+     'update a.md, b.md', 'a mix falls back to update');
+  eq(W.defaultMessage([mkf('deep/nested/where/file.md', 'tracked')]),
+     'update file.md', 'the basename is used, not the whole path');
+  eq(W.defaultMessage([]), '', 'nothing selected yields no message');
+
+  var many = [];
+  for (var mi = 0; mi < 30; mi++) many.push(mkf('file-number-' + mi + '.md', 'tracked'));
+  var longMsg = W.defaultMessage(many);
+  ok(longMsg.length <= 72, 'a long selection still fits a subject line (' + longMsg.length + ')');
+  ok(/and \d+ more$/.test(longMsg), 'and says how many it did not name');
+
+  /* The subject says what changed; the fact that Tack did it is metadata and
+   * goes in a trailer, where it does not crowd out the explanation. */
+  var withT = W.withTrailer('update CLAUDE.md');
+  ok(withT.split('\n')[0] === 'update CLAUDE.md', 'the subject line is the real message');
+  ok(withT.indexOf(W.TRAILER) !== -1, 'and the trailer is appended');
+  eq(W.withTrailer(withT), withT, 'appending twice does not double the trailer');
+
+  section('committing, for real');
+
+  var wrepo = tmp('writable');
+  rawGit(wrepo, ['init', '-q']);
+  rawGit(wrepo, ['config', 'user.email', 'test@example.com']);
+  rawGit(wrepo, ['config', 'user.name', 'Test']);
+  fs.writeFileSync(path.join(wrepo, 'seed.txt'), 'seed');
+  rawGit(wrepo, ['add', 'seed.txt']);
+  rawGit(wrepo, ['commit', '-qm', 'seed']);
+
+  fs.writeFileSync(path.join(wrepo, 'one.txt'), '1');
+  fs.writeFileSync(path.join(wrepo, 'two.txt'), '2');
+  fs.mkdirSync(path.join(wrepo, 'sub'));
+  fs.writeFileSync(path.join(wrepo, 'sub', 'three.txt'), '3');
+
+  var before = TK.readRepo(wrepo, Date.now(), { untracked: 'all' });
+  var expect = {};
+  before.files.forEach(function (f) { expect[f.path] = f.xy; });
+  eq(before.loose, 3, 'three files are loose to begin with');
+
+  var res = W.commitPaths(wrepo, ['one.txt', 'sub/three.txt'], '', expect);
+  ok(res.ok, 'a commit of two selected paths succeeds');
+  eq(res.count, 2, 'and reports what it committed');
+  ok(/^[0-9a-f]{4,}$/.test(res.sha), 'and hands back the sha');
+
+  var after = TK.readRepo(wrepo, Date.now(), { untracked: 'all' });
+  eq(after.files.map(function (f) { return f.path; }), ['two.txt'],
+     'the file that was NOT selected is still loose');
+
+  var body = rawGit(wrepo, ['log', '-1', '--format=%B']).stdout;
+  ok(body.indexOf('add one.txt, three.txt') === 0, 'the derived subject describes what changed');
+  ok(body.indexOf(W.TRAILER) !== -1, 'and the trailer records who did it');
+
+  eq(W.commitPaths(wrepo, [], 'x', {}).ok, false, 'committing nothing is refused');
+
+  section('another session\'s staged work is not swept in');
+
+  /* The failure this tree has actually had: acting on a whole-repo picture and
+   * carrying somebody else's half-finished file along with it. */
+  fs.writeFileSync(path.join(wrepo, 'theirs.txt'), 'half done');
+  rawGit(wrepo, ['add', 'theirs.txt']);
+  fs.writeFileSync(path.join(wrepo, 'mine.txt'), 'mine');
+
+  var st2 = TK.readRepo(wrepo, Date.now(), { untracked: 'all' });
+  var exp2 = {};
+  st2.files.forEach(function (f) { exp2[f.path] = f.xy; });
+
+  var res2 = W.commitPaths(wrepo, ['mine.txt'], 'just mine', exp2);
+  ok(res2.ok, 'committing one path succeeds while another sits staged');
+  var stat = rawGit(wrepo, ['show', '--stat', '--format=', 'HEAD']).stdout;
+  ok(stat.indexOf('mine.txt') !== -1, 'the selected file is in the commit');
+  ok(stat.indexOf('theirs.txt') === -1,
+     "and the other session's staged file is NOT");
+  ok(rawGit(wrepo, ['status', '--porcelain']).stdout.indexOf('theirs.txt') !== -1,
+     'it is still sitting there, untouched, for whoever owns it');
+
+  section('a stale picture is refused');
+
+  fs.writeFileSync(path.join(wrepo, 'moving.txt'), 'first');
+  var st3 = TK.readRepo(wrepo, Date.now(), { untracked: 'all' });
+  var exp3 = {};
+  st3.files.forEach(function (f) { exp3[f.path] = f.xy; });
+
+  /* Somebody else acts between the list being drawn and the key being pressed. */
+  rawGit(wrepo, ['add', 'moving.txt']);
+  var res3 = W.commitPaths(wrepo, ['moving.txt'], 'x', exp3);
+  ok(!res3.ok, 'a file that changed while you were deciding is not committed');
+  ok(/moved while you were deciding/.test(res3.reason), 'and it says so plainly');
+  ok(res3.moved && res3.moved.length === 1, 'and names what moved');
+
+  var res4 = W.commitPaths(wrepo, ['never-existed.txt'], 'x', {});
+  ok(!res4.ok, 'a path that is no longer changed is refused');
+
+  /* ==================================================================== sit */
+
+  section('the sitting');
+
+  var sitCfg = path.join(TMP, 'sit-roots.json');
+  fs.writeFileSync(sitCfg, JSON.stringify({
+    roots: [{ path: path.join(TMP, 'writable'), depth: 0 }], skip: ['.git'] }));
+
+  fs.writeFileSync(path.join(wrepo, 'pick-me.txt'), 'x');
+  var sit = new SIT.Sitting(sitCfg);
+  eq(sit.view, 'repos', 'a sitting opens on the list of repos');
+  ok(sit.draw().length > 0, 'and draws');
+
+  sit.key('\r');
+  eq(sit.view, 'files', 'enter opens a repo that has loose work');
+  ok(sit.repo.files.length > 0, 'and it has files');
+  ok(Object.keys(sit.expect).length === sit.repo.files.length,
+     'every drawn file is recorded in the expect map');
+
+  eq(sit.selected().length, 0, 'nothing is picked to begin with');
+  sit.key('c');
+  eq(sit.view, 'files', 'committing with nothing picked does not leave the list');
+  ok(/nothing picked/.test(sit.notice), 'and says why');
+
+  sit.key(' ');
+  eq(sit.selected().length, 1, 'space picks the file under the cursor');
+  sit.key(' ');
+  eq(sit.selected().length, 0, 'and space again unpicks it');
+
+  sit.key('a');
+  eq(sit.selected().length, sit.repo.files.length, 'a picks everything');
+  sit.key('a');
+  eq(sit.selected().length, 0, 'and a again picks nothing');
+
+  sit.key(' ');
+  sit.key('c');
+  eq(sit.view, 'message', 'c with something picked asks for a message');
+  ok(sit.draw().indexOf(sit.defaultMsg()) !== -1, 'and offers the derived one');
+  sit.key('\x1b');
+  eq(sit.view, 'files', 'escape goes back without committing');
+
+  sit.key('c');
+  sit.key('h'); sit.key('i');
+  eq(sit.message, 'hi', 'typing replaces the message');
+  sit.key('\x7f');
+  eq(sit.message, 'h', 'backspace works');
+  sit.key('\r');
+  eq(sit.view, 'done', 'enter commits and reports');
+  ok(/committed/.test(sit.notice), 'and the report says it worked');
+  ok(rawGit(wrepo, ['log', '-1', '--format=%s']).stdout.indexOf('h') === 0,
+     'the typed message is the one that landed');
+
+  var sit2 = new SIT.Sitting(sitCfg);
+  ok(sit2.draw().length > 0, 'a fresh sitting still draws after a commit');
+  ['repos', 'files', 'message', 'done'].forEach(function (v) {
+    var s2 = new SIT.Sitting(sitCfg);
+    s2.key('\r'); s2.key(' ');
+    if (v === 'message' || v === 'done') s2.key('c');
+    if (v === 'done') { s2.view = 'done'; s2.notice = 'x'; }
+    if (v === 'repos') { s2.view = 'repos'; }
+    var drew = true;
+    try { s2.draw(); } catch (e) { drew = false; }
+    ok(drew, 'the ' + v + ' view draws without throwing');
+  });
+
+  var quit = new SIT.Sitting(sitCfg);
+  eq(quit.key('q'), false, 'q from the repo list quits');
+  var back = new SIT.Sitting(sitCfg);
+  back.key('\r');
+  eq(back.key('q'), true, 'but q inside a repo goes back rather than quitting');
+  eq(back.view, 'repos', 'and lands on the repo list');
 }
 
 /* ---------------------------------------------------------------- mutation */
@@ -383,8 +611,12 @@ var MUTANTS = [
    "  if (r.empty)   return 2;"],
 
   ['the creature shears',
-   "  return [' ,---. ', '( ' + eyes + ' )', \" `-|-' \"];",
-   "  return [' ,---.', '( ' + eyes + ' )', \" `-|-' \"];"],
+   "  return [' ╭─────╮', ' │ ' + eyes + ' │', ' ╰──┬──╯'];",
+   "  return [' ╭─────╮', ' │' + eyes + '│', ' ╰──┬──╯'];"],
+
+  ['the ascii fallback shears instead',
+   "  if (ascii || T.ASCII) return [' ,---. ', '( ' + eyes + ' )', \" `-|-' \"];",
+   "  if (ascii || T.ASCII) return [' ,---.', '( ' + eyes + ' )', \" `-|-' \"];"],
 
   ['visLen counts colour codes as width',
    "function visLen(s) { return String(s).replace(/\\x1b\\[[0-9;]*m/g, '').length; }",
@@ -417,33 +649,139 @@ var MUTANTS = [
   ['a writing verb is quietly added to the allowlist',
    "var READ_ONLY_VERBS = ['status', 'log', 'rev-parse', '--version'];",
    "var READ_ONLY_VERBS = ['status', 'log', 'rev-parse', '--version', 'add'];"]
-];
+].map(function (m) { return { file: 'tack.js', name: m[0], from: m[1], to: m[2] }; });
 
-function runMutants(src) {
+/* The write layer's guarantees. Every one of these is a thing somebody could
+ * remove while believing they were simplifying. */
+var MUTANTS_WRITE = [
+  ['the wholesale-pathspec check is removed',
+   "  for (var i = 0; i < args.length; i++) {\n    if (WHOLESALE.indexOf(args[i]) !== -1) {",
+   "  for (var i = 0; i < args.length; i++) {\n    if (false) {"],
+
+  ['-A drops off the wholesale list',
+   "var WHOLESALE = ['-A', '--all', '-a', '--update', '-u', '.', '*', ':/', ':(top)'];",
+   "var WHOLESALE = ['--all', '-a', '--update', '-u', '.', '*', ':/', ':(top)'];"],
+
+  ['restore is quietly added to the write allowlist',
+   "var WRITE_VERBS = ['add', 'commit'];",
+   "var WRITE_VERBS = ['add', 'commit', 'restore'];"],
+
+  ['the verb allowlist is not consulted',
+   "  if (WRITE_VERBS.indexOf(verb) === -1) {",
+   "  if (false) {"],
+
+  ['a path may escape the repo',
+   "  if (norm === '..' || norm.indexOf('../') === 0) {",
+   "  if (false) {"],
+
+  ['a path may be an absolute path',
+   "  if (path.isAbsolute(p))   throw new Error('path must be relative: ' + p);",
+   "  if (false)   throw new Error('path must be relative: ' + p);"],
+
+  ['a path may look like a flag',
+   "  if (p.charAt(0) === '-')  throw new Error('path looks like a flag: ' + p);",
+   "  if (false)  throw new Error('path looks like a flag: ' + p);"],
+
+  ['the Pet block matches by prefix, so a sibling is caught too',
+   "    return real === lb || real.indexOf(lb + path.sep) === 0;",
+   "    return real === lb || real.indexOf(lb) === 0;"],
+
+  ['the Pet folder stops being blocked',
+   "var NEVER_RESTORE = [path.join(os.homedir(), '.claude', 'Pet')];",
+   "var NEVER_RESTORE = [];"],
+
+  ['the stale-picture check is removed',
+   "  if (moved.length) {",
+   "  if (false) {"],
+
+  ['a path that vanished is committed anyway',
+   "    if (!(p in current)) { moved.push(p + ' is no longer changed'); return; }",
+   "    if (!(p in current)) { return; }"],
+
+  ['the commit is not limited to the selected paths',
+   "  var out = gitWrite(repoDir, ['commit', '-m', msg, '--'].concat(paths));",
+   "  var out = gitWrite(repoDir, ['commit', '-m', msg]);"],
+
+  ['an empty selection commits everything staged',
+   "  if (!paths || !paths.length) return { ok: false, reason: 'nothing selected' };",
+   "  if (false) return { ok: false, reason: 'nothing selected' };"],
+
+  ['the derived subject stops describing what changed',
+   "  return verb + ' ' + shown.join(', ') + (rest > 0 ? ' and ' + rest + ' more' : '');",
+   "  return 'committed by Tack';"],
+
+  ['the subject line is no longer capped',
+   "    if (shown.length && (verb.length + 1 + candidate.length) > 68) break;",
+   "    if (false) break;"],
+
+  ['the trailer is appended every time',
+   "  if (message.indexOf(TRAILER) !== -1) return message;",
+   "  if (false) return message;"]
+].map(function (m) { return { file: 'write.js', name: m[0], from: m[1], to: m[2] }; });
+
+var MUTANTS_SIT = [
+  ['the expect map is not rebuilt when a repo is reopened',
+   "  this.expect = {};\n  this.picked = {};",
+   "  this.picked = {};"],
+
+  ['committing with nothing picked is allowed through',
+   "    if (!this.selected().length) { this.notice = 'nothing picked yet — space picks a file'; return true; }",
+   "    if (false) { return true; }"],
+
+  ['q quits from inside a repo instead of going back',
+   "    if (v === 'files') { this.view = 'repos'; this.repo = null; this.notice = '';\n                         this.refresh(); return true; }",
+   "    if (false) { return true; }"],
+
+  ['space stops toggling',
+   "  if (k === ' ') { if (f) { this.picked[f.path] = !this.picked[f.path]; } this.notice = ''; return true; }",
+   "  if (k === ' ') { if (f) { this.picked[f.path] = true; } this.notice = ''; return true; }"],
+
+  ['the expect map is never handed to the commit',
+   "  var res = W.commitPaths(this.repo.dir, picked, msg, this.expect, Date.now());",
+   "  var res = W.commitPaths(this.repo.dir, picked, msg, null, Date.now());"]
+].map(function (m) { return { file: 'sit.js', name: m[0], from: m[1], to: m[2] }; });
+
+MUTANTS = MUTANTS.concat(MUTANTS_WRITE, MUTANTS_SIT);
+
+var SOURCES = {
+  'tack.js':  fs.readFileSync(path.join(ROOT, 'tack.js'),  'utf8'),
+  'write.js': fs.readFileSync(path.join(ROOT, 'write.js'), 'utf8'),
+  'sit.js':   fs.readFileSync(path.join(ROOT, 'sit.js'),   'utf8')
+};
+
+function runMutants() {
   console.log('\n=== mutation suite: ' + MUTANTS.length + ' mutants ===');
   var caught = 0, escaped = [], skipped = [];
 
   for (var i = 0; i < MUTANTS.length; i++) {
-    var name = MUTANTS[i][0], from = MUTANTS[i][1], to = MUTANTS[i][2];
+    var m = MUTANTS[i];
+    var src = SOURCES[m.file];
 
-    if (src.indexOf(from) === -1) {
+    if (src.indexOf(m.from) === -1) {
       /* A mutant that cannot be applied has not been caught. Say SKIP, never
        * pass -- the source moved and this mutant is now testing nothing. */
-      skipped.push(name);
-      console.log('  SKIP ' + name + '  (anchor no longer in tack.js)');
+      skipped.push(m.name);
+      console.log('  SKIP ' + m.name + '  (anchor no longer in ' + m.file + ')');
       continue;
     }
 
+    /* The copy sits beside the originals, so its own require('./tack.js') and
+     * require('./write.js') still resolve -- one file is mutated at a time and
+     * everything it leans on stays honest. */
     var file = path.join(ROOT, '.mutant-' + i + '.tmp.js');
-    fs.writeFileSync(file, src.replace(from, to));
+    fs.writeFileSync(file, src.replace(m.from, m.to));
 
     var before = { pass: pass, fail: fail, msgs: failures.length };
     var died = false;
     try {
       delete require.cache[require.resolve(file)];
       var mutated = require(file);
+      var mods = { TK: TK, W: W, SIT: SIT };
+      if (m.file === 'tack.js')  mods.TK  = mutated;
+      if (m.file === 'write.js') mods.W   = mutated;
+      if (m.file === 'sit.js')   mods.SIT = mutated;
       var hush = console.log; console.log = function () {};
-      try { suite(mutated); } finally { console.log = hush; }
+      try { suite(mods.TK, mods.W, mods.SIT); } finally { console.log = hush; }
       died = fail > before.fail;
     } catch (e) {
       died = true; /* a mutant that crashes the suite is caught, loudly */
@@ -452,8 +790,9 @@ function runMutants(src) {
 
     try { fs.unlinkSync(file); } catch (e) {}
 
-    if (died) { caught++; console.log('  caught  ' + name); }
-    else      { escaped.push(name); console.log('  ESCAPED ' + name); }
+    if (died) { caught++; console.log('  caught  ' + m.name + C_DIM(' (' + m.file + ')')); }
+    else      { escaped.push(m.name + ' (' + m.file + ')');
+                console.log('  ESCAPED ' + m.name + '  (' + m.file + ')'); }
   }
 
   console.log('\n  ' + caught + '/' + (MUTANTS.length - skipped.length) +
@@ -461,6 +800,8 @@ function runMutants(src) {
               (skipped.length ? ', ' + skipped.length + ' skipped' : ''));
   return { escaped: escaped, skipped: skipped };
 }
+
+function C_DIM(s) { return s; }
 
 /* -------------------------------------------------------------------- main */
 
@@ -471,15 +812,14 @@ fs.readdirSync(ROOT).forEach(function (f) {
 });
 
 console.log('=== tack selftest ===');
-var TK = require(SOURCE);
+var TK  = require(SOURCE);
+var W   = require(path.join(ROOT, 'write.js'));
+var SIT = require(path.join(ROOT, 'sit.js'));
 TK.C.on = false;
-suite(TK);
+suite(TK, W, SIT);
 
 var mut = { escaped: [], skipped: [] };
-if (!NO_MUT) {
-  var src = fs.readFileSync(SOURCE, 'utf8');
-  mut = runMutants(src);
-}
+if (!NO_MUT) mut = runMutants();
 
 cleanup();
 

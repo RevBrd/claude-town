@@ -26,7 +26,8 @@ var T = {
   PREVIEW_FILES:   2,   // how many filenames to show per repo before "+N"
   LABEL_MAX:      24,   // repo name column
   PREVIEW_MAX:    32,   // filename column
-  SCAN_TIMEOUT:  8000   // ms per git call
+  SCAN_TIMEOUT:  8000,  // ms per git call
+  ASCII:       false    // plain ` and ' instead of box-drawing, for a console that needs it
 };
 
 /* The whole of pass 1's authority over your machine. To widen this you have to
@@ -274,10 +275,15 @@ var C = {
 
 /* Tack, seen from the side: a round head and a point. The eyes are the only
  * thing that changes, and they change only because of what was found. */
-function creature(mood) {
+/* Box-drawing rather than ` and ', because those two are a grave accent and a
+ * straight quote in most terminal fonts and the head comes out lopsided. These
+ * glyphs have one shape everywhere. --ascii keeps the old form for a console
+ * that cannot draw them. */
+function creature(mood, ascii) {
   var eyes = { pleased: '^ ^', awake: 'o o', alert: 'O O', puzzled: 'o -' }[mood] || 'o o';
   /* Equal width, or the three lines shear against the text beside them. */
-  return [' ,---. ', '( ' + eyes + ' )', " `-|-' "];
+  if (ascii || T.ASCII) return [' ,---. ', '( ' + eyes + ' )', " `-|-' "];
+  return [' ╭─────╮', ' │ ' + eyes + ' │', ' ╰──┬──╯'];
 }
 
 function moodOf(s) {
@@ -381,8 +387,8 @@ function render(s) {
   }
   L.push('');
   if (t.files) {
-    L.push('  ' + C.dim('`tack show <name>` for the file list.  Pass 1 is read-only —'));
-    L.push('  ' + C.dim('staging and committing arrive in pass 2.'));
+    L.push('  ' + C.dim('`tack show <name>` for the file list · `tack sit` to commit'));
+    L.push('  ' + C.dim('nothing here can restore, reset or undo your work.'));
     L.push('');
   }
   for (var k = 0; k < s.missingRoots.length; k++) {
@@ -458,13 +464,16 @@ var HELP = [
   '',
   '  tack            what is loose, everywhere',
   '  tack show NAME  the file list for one repo (substring match)',
+  '  tack sit [NAME] the live pane -- pick files and commit them',
   '  tack one        a single line, for a status bar',
   '  tack --json     the same sweep as data',
   '',
   '  --no-color      plain text',
+  '  --ascii         plain ` and \' instead of box-drawing',
   '',
-  '  Pass 1 is read-only. Tack cannot stage, commit, or restore anything;',
-  '  the allowlist that enforces that is READ_ONLY_VERBS in tack.js.',
+  '  Tack can add and commit. It cannot restore, reset, or check out --',
+  '  nothing here can undo your work. It also has no way to express',
+  '  `git add -A`: it stages only paths it has shown you.',
   ''
 ].join('\n');
 
@@ -472,7 +481,8 @@ function main(argv) {
   var args = argv.slice(2);
   if (args.indexOf('--no-color') !== -1 || process.env.NO_COLOR ||
       !process.stdout.isTTY) C.on = false;
-  args = args.filter(function (a) { return a !== '--no-color'; });
+  if (args.indexOf('--ascii') !== -1 || process.env.TACK_ASCII) T.ASCII = true;
+  args = args.filter(function (a) { return a !== '--no-color' && a !== '--ascii'; });
 
   if (args[0] === '--help' || args[0] === '-h' || args[0] === 'help') {
     process.stdout.write(HELP + '\n'); return 0;
@@ -490,6 +500,10 @@ function main(argv) {
     process.stdout.write(JSON.stringify(s, null, 2) + '\n'); return 0;
   }
   if (args[0] === 'one') { process.stdout.write(renderOne(s) + '\n'); return 0; }
+  if (args[0] === 'sit') {
+    /* Required lazily so the glance never loads the file that can write. */
+    return require('./sit.js').run(cfgFile, args.slice(1).join(' ') || null);
+  }
   var query = null;
   if (args[0] === 'show') {
     if (!args[1]) { process.stdout.write('\n  tack show needs a name.\n' + HELP + '\n'); return 1; }
@@ -518,4 +532,8 @@ module.exports = {
   main: main
 };
 
-if (require.main === module) process.exit(main(process.argv));
+if (require.main === module) {
+  var code = main(process.argv);
+  if (code && typeof code.then === 'function') code.then(function (c) { process.exit(c); });
+  else process.exit(code);
+}
