@@ -1,8 +1,6 @@
 # Claude Town
 
-The catch-all workspace at `C:\Users\fonte\Projects\Claude Town\`. This folder is for things
-that don't have a preestablished topic or don't cleanly fit into any of the other project
-branches — miscellaneous builds, one-off experiments, utility scripts, whatever lands here.
+The place where the infrastructure lives, as well as a couple critters.
 
 ## Projects here
 
@@ -13,11 +11,47 @@ one-off, give it a folder and its own `CLAUDE.md`, and add a row here.
 |---|---|---|
 | [Marquee](Marquee/) | A front door to the whole tree — derives its catalog from the filesystem and each collection’s own catalog table rather than keeping a list, so it reports drift instead of adding to it | Playable: open `Marquee/marquee.html`. A building of five rooms, 34 works open: Games, Misc Tools, Claudelings, Space Stuff, and the Pet. Derivation layer and launcher done and tested (44 assertions, 13 mutants, plus a page smoke suite). The cabinet is built: a single-screen picture house with derived offset-ink posters, a chased-bulb sign and a changeable-letter reader board. Rooms are walked between, and eight games print their own posters from palettes declared in their own docs. On [Mains](Mains/) it derives the catalog **live in the browser**, running the same `derive.js` the terminal runs behind an I/O seam — no regeneration step, no stale window — and prints which source it used. An Electron runtime is the one open job. Read its `CLAUDE.md` |
 | [Mains](Mains/) | Power for the tree — a dependency-free local server, so a page in this collection can do the things a `file://` page cannot. Everything still runs *on batteries* by double-click; through Mains it runs *on the mains* | Working: double-click `Mains/Power On.bat`, or `node Mains/server.js`. Five circuits on `127.0.0.1:12060` — Claude Town, Games, Misc Tools, KSP Tools, and the Pet — plus a front panel and a client shim artifacts include to ask which power source they are on. Read-only and tested as a security boundary (129 assertions, live attack suite, 18 mutants all caught). Writing to disk is pass 2, deliberately separate. Read its `CLAUDE.md` |
-| [Tack](Tack/) | A small creature that shows you what is still held together with pins — the tree is ten separate git repositories and nothing answers for all of them at once. Tack keeps no list and re-reads every repo every time it is asked, so it cannot report something stale | Working: type `tack` (the folder is on PATH), or double-click `Tack/Look.bat`. Ten repos swept, with age, a **live** flag when another session may be mid-write, and *no commits yet* as its own state. `tack sit` opens a pane on the alternate screen where you pick files and commit them. **`git add -A` is inexpressible, not refused**, the commit is limited to the paths you picked so another session's staged work is never swept in, and a list that moved while you were deciding is rejected rather than acted on. **Nothing here can restore, reset or undo** — two allowlists in two files, both asserted by value (182 assertions, 40 mutants all caught). Restoring is pass 2b, deliberately separate. Read its `CLAUDE.md` |
+| [Tack](Tack/) | A small creature that shows you what is still held together with pins — the tree is ten separate git repositories and nothing answers for all of them at once. Tack keeps no list and re-reads every repo every time it is asked, so it cannot report something stale | Working: type `tack` (the folder is on PATH), or double-click `Tack/Look.bat`. Ten repos swept, with age, a **live** flag when another session may be mid-write, and *no commits yet* as its own state. `tack sit` opens a pane on the alternate screen where you pick files and commit them. **`git add -A` is inexpressible, not refused**, the commit is limited to the paths you picked so another session's staged work is never swept in, and a list that moved while you were deciding is rejected rather than acted on. **Nothing here can restore, reset or undo** — two allowlists in two files, both asserted by value (225 assertions, 43 mutants all caught). Restoring is pass 2b, deliberately separate. Read its `CLAUDE.md` |
 
 A folder here can be promoted to a top-level `Projects/` branch later if it grows into one; that
 is a folder move and one line in the global `CLAUDE.md`. Starting here and promoting is cheap.
 Starting top-level and demoting is not.
+
+## Places and critters
+
+Everything here is branded, and the branding was emergent rather than planned — Marquee is the
+hometown cinema twenty years too late, Mains is the generator nobody thinks about, Shim is a thing
+in a room with a history you weren't around for. They lined up, so from 21 Aug 2026 the pattern is
+deliberate. One line decides which kind a new thing is:
+
+> **A critter is earned by a tool that has a state you would otherwise have to go and ask for.
+> Everything else is a place.**
+
+Shim has a state — mood, size, what it has eaten. Tack has one — what it just found across ten
+repos. That state is what the eyes are *for*, and it is why neither of them is decoration: the
+face is a readout that happens to be a face.
+
+Marquee and Mains have no state of their own. Marquee is a view onto other things; Mains is a
+switch that is on or off. They get place-names, and putting a mascot on either would be putting a
+face on a light switch.
+
+Three things to hold to, each of which is a way this goes wrong:
+
+- **A critter with nothing to report is a sticker.** If the eyes would never change, it does not
+  need eyes.
+- **Two critters must not overlap.** Two things reporting on the same tree will eventually
+  disagree, and a disagreement between two mascots is much harder to notice than a wrong number.
+  A second one that also watched git would be worse than none.
+- **They do not know about each other, and there is no shared world.** A connected setting is a
+  maintenance burden that rots quietly — the first renamed folder breaks a joke nobody is
+  maintaining. Each stands alone, which is why Shim still works fine having never heard of Tack.
+
+The theme lives in the human-facing surface only. Every number and every word in the *data* stays
+the real one — `modified`, `untracked`, `staged` — because these are tools for someone learning
+the system underneath, and a friendlier vocabulary is a vocabulary that transfers nowhere.
+
+*(Convention proposed by CTown 6 and adopted by Trevor, 21 Aug 2026, after Tack turned out to be
+the second one of these rather than a one-off.)*
 
 ## Working alongside other sessions
 

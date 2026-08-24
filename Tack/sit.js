@@ -91,8 +91,6 @@ Sitting.prototype.draw = function () {
   var mood = this.view === 'files'
     ? (this.repo && this.repo.live ? 'alert' : 'awake')
     : TK.moodOf(s);
-  var head = TK.creature(mood);
-
   var l1, l2;
   if (this.view === 'repos') {
     l1 = C.body('tack') + C.dim(' · ') +
@@ -108,9 +106,7 @@ Sitting.prototype.draw = function () {
   }
 
   L.push('');
-  L.push('  ' + C.chrome(head[0]));
-  L.push('  ' + C.chrome(head[1]) + '   ' + l1);
-  L.push('  ' + C.chrome(head[2]) + '   ' + l2);
+  TK.headBlock(mood, l1, l2).forEach(function (x) { L.push(x); });
   L.push('');
 
   if (this.view === 'repos') {

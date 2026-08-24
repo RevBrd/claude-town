@@ -27,7 +27,7 @@ var T = {
   LABEL_MAX:      24,   // repo name column
   PREVIEW_MAX:    32,   // filename column
   SCAN_TIMEOUT:  8000,  // ms per git call
-  ASCII:       false    // plain ` and ' instead of box-drawing, for a console that needs it
+  SHAPE:       'bat'    // which creature: plain | bat | batlite | ascii. `tack faces` shows them
 };
 
 /* The whole of pass 1's authority over your machine. To widen this you have to
@@ -277,13 +277,56 @@ var C = {
  * thing that changes, and they change only because of what was found. */
 /* Box-drawing rather than ` and ', because those two are a grave accent and a
  * straight quote in most terminal fonts and the head comes out lopsided. These
- * glyphs have one shape everywhere. --ascii keeps the old form for a console
- * that cannot draw them. */
-function creature(mood, ascii) {
+ * glyphs have one shape everywhere.
+ *
+ * Every shape returns lines of EQUAL WIDTH, or the text beside them shears.
+ * The last two lines are the ones text attaches to, so a shape may be as tall
+ * as it likes above them. `tack faces` prints them all. */
+var SHAPES = {
+  /* A thumbtack seen from the side: round head, two eyes, a point. */
+  plain: function (eyes) {
+    return [' ╭─────╮',
+            ' │ ' + eyes + ' │',
+            ' ╰──┬──╯'];
+  },
+  /* Ears. Trevor read `.bat` as an animal rather than as Windows' extension
+   * for a batch file, which is a better idea than the truth. */
+  bat: function (eyes) {
+    return [' ╱╲   ╱╲ ',
+            '╭───────╮',
+            '│  ' + eyes + '  │',
+            '╰───┬───╯'];
+  },
+  /* The same, in characters every font has had since forever. */
+  batlite: function (eyes) {
+    return [' /\\   /\\ ',
+            '╭───────╮',
+            '│  ' + eyes + '  │',
+            '╰───┬───╯'];
+  },
+  /* For a console that cannot draw box-drawing glyphs at all. */
+  ascii: function (eyes) {
+    return [' ,---. ',
+            '( ' + eyes + ' )',
+            " `-|-' "];
+  }
+};
+
+function creature(mood, shape) {
   var eyes = { pleased: '^ ^', awake: 'o o', alert: 'O O', puzzled: 'o -' }[mood] || 'o o';
-  /* Equal width, or the three lines shear against the text beside them. */
-  if (ascii || T.ASCII) return [' ,---. ', '( ' + eyes + ' )', " `-|-' "];
-  return [' ╭─────╮', ' │ ' + eyes + ' │', ' ╰──┬──╯'];
+  var draw = SHAPES[shape || T.SHAPE] || SHAPES.plain;
+  return draw(eyes);
+}
+
+/* The creature with its two lines of text beside it. Text always attaches to
+ * the last two lines, so a taller shape grows upward and nothing else moves. */
+function headBlock(mood, line1, line2) {
+  var h = creature(mood), L = [];
+  for (var i = 0; i < h.length; i++) {
+    var text = i === h.length - 2 ? line1 : (i === h.length - 1 ? line2 : '');
+    L.push('  ' + C.chrome(h[i]) + (text ? '   ' + text : ''));
+  }
+  return L;
 }
 
 function moodOf(s) {
@@ -340,8 +383,6 @@ function previewOf(r, width) {
 
 function render(s) {
   var L = [], now = s.now, t = s.totals;
-  var head = creature(moodOf(s));
-
   var line1, line2;
   if (t.files) {
     /* "loose", not "files loose" -- git collapses an untracked folder into one
@@ -359,9 +400,7 @@ function render(s) {
   if (t.errors) line2 += C.dim('  ·  ') + C.alert(t.errors + ' unreadable');
 
   L.push('');
-  L.push('  ' + C.chrome(head[0]));
-  L.push('  ' + C.chrome(head[1]) + '   ' + line1);
-  L.push('  ' + C.chrome(head[2]) + '   ' + line2);
+  headBlock(moodOf(s), line1, line2).forEach(function (x) { L.push(x); });
   L.push('');
 
   var w = Math.min(T.LABEL_MAX, s.repos.reduce(function (m, r) {
@@ -449,6 +488,43 @@ function expandMatches(s, query, now) {
   return s;
 }
 
+/* ------------------------------------------------------------------ faces */
+
+/* Every shape in every mood, side by side. This exists because which glyphs
+ * render well is a property of the font on the machine reading them, which is
+ * not a thing this file can find out -- so it shows them all and lets whoever
+ * is looking decide. */
+function renderFaces() {
+  var MOODS = ['pleased', 'awake', 'alert', 'puzzled'];
+  var WHY = { pleased: 'all committed', awake: 'work is loose',
+              alert: 'unreadable repo', puzzled: 'a repo with no commits' };
+  var L = [''];
+
+  Object.keys(SHAPES).forEach(function (name) {
+    var drawn = MOODS.map(function (m) { return creature(m, name); });
+    var tall  = drawn[0].length;
+    L.push('  ' + C.body(name) + C.dim(name === T.SHAPE ? '   (current)' : ''));
+    L.push('');
+    for (var row = 0; row < tall; row++) {
+      L.push('    ' + drawn.map(function (d) { return C.chrome(d[row]); }).join('   '));
+    }
+    L.push('    ' + drawn.map(function (d, i) {
+      return C.dim(pad(MOODS[i], visLen(d[0])));
+    }).join('   '));
+    L.push('');
+  });
+
+  L.push('  ' + C.dim('what each mood means:'));
+  MOODS.forEach(function (m) {
+    L.push('    ' + C.dim(pad(m, 9) + WHY[m]));
+  });
+  L.push('');
+  L.push('  ' + C.dim('try one:  tack --shape=bat'));
+  L.push('  ' + C.dim('keep one: set SHAPE in the tuning block at the top of tack.js'));
+  L.push('');
+  return L.map(trimEnd);
+}
+
 /* ---------------------------------------------------------------- one-line */
 
 function renderOne(s) {
@@ -466,10 +542,11 @@ var HELP = [
   '  tack show NAME  the file list for one repo (substring match)',
   '  tack sit [NAME] the live pane -- pick files and commit them',
   '  tack one        a single line, for a status bar',
+  '  tack faces      every shape of him, in every mood',
   '  tack --json     the same sweep as data',
   '',
   '  --no-color      plain text',
-  '  --ascii         plain ` and \' instead of box-drawing',
+  '  --shape=NAME    plain | bat | batlite | ascii  (see `tack faces`)',
   '',
   '  Tack can add and commit. It cannot restore, reset, or check out --',
   '  nothing here can undo your work. It also has no way to express',
@@ -481,11 +558,23 @@ function main(argv) {
   var args = argv.slice(2);
   if (args.indexOf('--no-color') !== -1 || process.env.NO_COLOR ||
       !process.stdout.isTTY) C.on = false;
-  if (args.indexOf('--ascii') !== -1 || process.env.TACK_ASCII) T.ASCII = true;
-  args = args.filter(function (a) { return a !== '--no-color' && a !== '--ascii'; });
+  if (args.indexOf('--ascii') !== -1 || process.env.TACK_ASCII) T.SHAPE = 'ascii';
+  args.forEach(function (a) {
+    var m = a.match(/^--shape=(.+)$/);
+    if (m && SHAPES[m[1]]) T.SHAPE = m[1];
+    else if (m) process.stderr.write('  no shape called "' + m[1] + '". try: ' +
+                                     Object.keys(SHAPES).join(', ') + '\n');
+  });
+  args = args.filter(function (a) {
+    return a !== '--no-color' && a !== '--ascii' && !/^--shape=/.test(a); });
 
   if (args[0] === '--help' || args[0] === '-h' || args[0] === 'help') {
     process.stdout.write(HELP + '\n'); return 0;
+  }
+
+  /* Purely cosmetic, so it does not pay for a sweep of ten repos first. */
+  if (args[0] === 'faces') {
+    process.stdout.write(renderFaces().join('\n') + '\n'); return 0;
   }
 
   var cfgFile = path.join(__dirname, 'roots.json');
@@ -528,7 +617,8 @@ module.exports = {
   discover: discover, loadRoots: loadRoots, expandHome: expandHome,
   labelFor: labelFor, readRepo: readRepo, sweep: sweep, rank: rank,
   render: render, renderShow: renderShow, expandMatches: expandMatches, trimEnd: trimEnd, renderOne: renderOne, previewOf: previewOf,
-  creature: creature, moodOf: moodOf, ago: ago, visLen: visLen, padVis: padVis, C: C,
+  creature: creature, headBlock: headBlock, SHAPES: SHAPES, renderFaces: renderFaces,
+  moodOf: moodOf, ago: ago, visLen: visLen, padVis: padVis, C: C,
   main: main
 };
 

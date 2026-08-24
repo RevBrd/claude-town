@@ -258,13 +258,57 @@ function suite(TK, W, SIT) {
 
   section('rendering');
 
-  var head = TK.creature('awake');
-  eq(head.length, 3, 'the creature is three lines');
-  eq([head[0].length, head[1].length, head[2].length],
-     [head[1].length, head[1].length, head[1].length],
-     'and all three are the same width, or the text beside it shears');
-  ok(TK.creature('pleased')[1] !== TK.creature('alert')[1],
-     'the eyes change with the mood');
+  /* These used to assert "the creature is three lines", which was an
+   * incidental fact rather than a property -- it went red the moment a shape
+   * grew ears, having caught nothing. What actually matters is stated below,
+   * and holds for any shape anyone adds later. */
+  var MOODS = ['pleased', 'awake', 'alert', 'puzzled'];
+  Object.keys(TK.SHAPES).forEach(function (name) {
+    var head = TK.creature('awake', name);
+
+    ok(head.length >= 3, name + ': at least three lines');
+    var widths = head.map(function (l) { return l.length; });
+    eq(widths, head.map(function () { return widths[0]; }),
+       name + ': every line is the same width, or the text beside it shears');
+
+    /* Only the eyes change, and they live on the line text attaches to. */
+    var eyeRow = head.length - 2;
+    var drawn = MOODS.map(function (m) { return TK.creature(m, name); });
+    ok(drawn[0][eyeRow] !== drawn[2][eyeRow],
+       name + ': the eyes change with the mood');
+    for (var row = 0; row < head.length; row++) {
+      if (row === eyeRow) continue;
+      var same = drawn.every(function (d) { return d[row] === drawn[0][row]; });
+      ok(same, name + ': line ' + row + ' is the same in every mood — only the eyes move');
+    }
+  });
+
+  eq(TK.creature('awake', 'no-such-shape'), TK.creature('awake', 'plain'),
+     'an unknown shape name falls back rather than throwing');
+
+  section('the creature and its text');
+
+  /* Text attaches to the LAST two lines, so a taller shape grows upward and
+   * nothing else has to move. A shape with ears would shear against its own
+   * caption if this were pinned to lines 1 and 2. */
+  Object.keys(TK.SHAPES).forEach(function (name) {
+    TK.T.SHAPE = name;
+    var block = TK.headBlock('awake', 'FIRST', 'SECOND');
+    eq(block.length, TK.creature('awake', name).length,
+       name + ': the block is as tall as the creature');
+    ok(block[block.length - 2].indexOf('FIRST')  !== -1, name + ': line one sits beside the eyes');
+    ok(block[block.length - 1].indexOf('SECOND') !== -1, name + ': line two sits beside the chin');
+    for (var i = 0; i < block.length - 2; i++) {
+      ok(block[i].indexOf('FIRST') === -1 && block[i].indexOf('SECOND') === -1,
+         name + ': nothing is written beside line ' + i);
+    }
+  });
+  TK.T.SHAPE = 'bat';
+
+  ok(TK.renderFaces().join('\n').indexOf('bat') !== -1, 'faces lists every shape');
+  Object.keys(TK.SHAPES).forEach(function (name) {
+    ok(TK.renderFaces().join('\n').indexOf(name) !== -1, 'faces shows ' + name);
+  });
 
   eq(TK.moodOf({ totals: { errors: 1, empty: 0, files: 0 } }), 'alert', 'errors alarm it');
   eq(TK.moodOf({ totals: { errors: 0, empty: 0, files: 4 } }), 'awake', 'loose work wakes it');
@@ -610,13 +654,25 @@ var MUTANTS = [
    "  if (r.empty)   return 1;",
    "  if (r.empty)   return 2;"],
 
-  ['the creature shears',
-   "  return [' ╭─────╮', ' │ ' + eyes + ' │', ' ╰──┬──╯'];",
-   "  return [' ╭─────╮', ' │' + eyes + '│', ' ╰──┬──╯'];"],
+  ['the plain shape shears',
+   "    return [' ╭─────╮',\n            ' │ ' + eyes + ' │',\n            ' ╰──┬──╯'];",
+   "    return [' ╭─────╮',\n            ' │' + eyes + '│',\n            ' ╰──┬──╯'];"],
+
+  ['the ears are a different width from the head',
+   "    return [' ╱╲   ╱╲ ',",
+   "    return [' ╱╲   ╱╲',"],
 
   ['the ascii fallback shears instead',
-   "  if (ascii || T.ASCII) return [' ,---. ', '( ' + eyes + ' )', \" `-|-' \"];",
-   "  if (ascii || T.ASCII) return [' ,---.', '( ' + eyes + ' )', \" `-|-' \"];"],
+   "    return [' ,---. ',\n            '( ' + eyes + ' )',\n            \" `-|-' \"];",
+   "    return [' ,---.',\n            '( ' + eyes + ' )',\n            \" `-|-' \"];"],
+
+  ['the eyes stop moving with the mood',
+   "  var eyes = { pleased: '^ ^', awake: 'o o', alert: 'O O', puzzled: 'o -' }[mood] || 'o o';",
+   "  var eyes = 'o o';"],
+
+  ['text is pinned to lines 1 and 2 instead of the last two',
+   "    var text = i === h.length - 2 ? line1 : (i === h.length - 1 ? line2 : '');",
+   "    var text = i === 1 ? line1 : (i === 2 ? line2 : '');"],
 
   ['visLen counts colour codes as width',
    "function visLen(s) { return String(s).replace(/\\x1b\\[[0-9;]*m/g, '').length; }",

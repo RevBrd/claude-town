@@ -18,6 +18,7 @@ terminal. Or double-click **`Look.bat`** for the glance and **`Sit.bat`** for th
 | `tack show NAME` | the file list for one repo |
 | `tack sit [NAME]` | the pane — pick files, commit them |
 | `tack one` | a single line, for a status bar |
+| `tack faces` | every shape of him, in every mood |
 
 ## The one idea
 
@@ -153,7 +154,7 @@ Tack/
   tack.cmd           the shim, so it is one word instead of a path
   Look.bat           double-click: the glance
   Sit.bat            double-click: the pane
-  tools/selftest.js  182 assertions + 40 mutants across all three files
+  tools/selftest.js  225 assertions + 43 mutants across all three files
 ```
 
 The split is the security model, not tidiness. `tack.js` is the file that runs on every glance and
@@ -214,9 +215,41 @@ names and counts the rest: `Shadowless/CREDITS.md +2`. Shorter, and true.
 ASCII, and it looked level in a proposal font and lopsided on Trevor's actual terminal — a
 backtick is a grave accent in Cascadia Mono and an apostrophe is a straight quote, so the two
 sides of the head disagreed. Same three lines of text, two different pictures. `╭─╮ │ ╰─┬─╯` have
-one shape in every font. `--ascii` (or `TACK_ASCII=1`) keeps the old form for a console that
-cannot draw them, and there is a shear mutant for *both* forms — the fallback is a real code path
-and an untested fallback is a fallback that does not work.
+one shape in every font.
+
+## The shapes, and why there is more than one
+
+```
+tack faces
+```
+
+Four of him — `plain`, `bat`, `batlite`, `ascii` — every mood, side by side. **Which glyphs render
+well is a property of the font on the machine reading them, and this file cannot find that out**,
+so it shows them all and whoever is looking decides. `--shape=NAME` tries one; `SHAPE` in the
+tuning block keeps it. `batlite` is the ears in `/\`, for a font whose diagonals are ugly.
+
+The ears are Trevor's, from reading `.bat` as an animal rather than as Windows' extension for a
+batch file. The truth is duller than the misreading, so the misreading won.
+
+**What a shape must satisfy, all asserted for every shape in the table:**
+
+- Every line is the **same width**, or the text beside it shears.
+- At least three lines.
+- **Only the eyes change with the mood.** Every other line is identical across all four moods —
+  asserted line by line, because a shape whose whole head twitched would be a performance rather
+  than a readout.
+- Text attaches to the **last two lines**, so a taller shape grows *upward* and nothing else has
+  to move. There is a mutant that pins the text to lines 1 and 2, which is invisible on a
+  three-line shape and shears every taller one.
+
+That last rule is why the ears cost nothing. `headBlock()` is the only thing that knows where text
+goes, and both the glance and the pane call it, so the two cannot disagree.
+
+**A note on what these assertions used to say.** The first version asserted *"the creature is
+three lines"* — an incidental fact rather than a property. It caught nothing, and then went red
+the moment a shape grew ears, which is the worst of both: no coverage, and a false alarm later.
+The rules above are what it should have said from the start. Worth remembering when writing an
+assertion about anything cosmetic: pin the rule, never the current output.
 
 ## Commands
 
