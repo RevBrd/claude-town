@@ -50,6 +50,13 @@ var FORBIDDEN_FLAGS = ['--staged', '-S', '--source', '-s', '--overlay'];
  * the recovery path must not require the skill whose absence caused the
  * mistake. This one is: open the folder, drag the file back. */
 function atticRoot() {
+  /* TACK_ATTIC exists so the selftest can rescue into a temp folder. Without
+   * it the suite files thirteen fake rescues into the real attic every run,
+   * which is a rubbish tip in the one place that must stay legible -- the
+   * whole value of the attic is that when you finally go looking, what is in
+   * it is yours. Found by running `tack attic` after a test run and reading
+   * the output rather than assuming it. */
+  if (process.env.TACK_ATTIC) return process.env.TACK_ATTIC;
   var base = process.env.LOCALAPPDATA ||
              path.join(os.homedir(), 'AppData', 'Local');
   return path.join(base, 'Tack', 'attic');

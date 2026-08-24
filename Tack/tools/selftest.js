@@ -53,8 +53,17 @@ function normalise(s) { return String(s).replace(/\r\n/g, '\n'); }
 /* ------------------------------------------------------------------ tmp fs */
 
 var TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'tack-test-'));
+
+/* Rescue into a temp attic, never the real one. Set BEFORE undo.js is required
+ * so nothing can read the real path first. */
+var REAL_ATTIC = process.env.TACK_ATTIC;
+process.env.TACK_ATTIC = path.join(TMP, 'attic');
 function tmp(p) { var full = path.join(TMP, p); fs.mkdirSync(full, { recursive: true }); return full; }
-function cleanup() { try { fs.rmSync(TMP, { recursive: true, force: true }); } catch (e) {} }
+function cleanup() {
+  try { fs.rmSync(TMP, { recursive: true, force: true }); } catch (e) {}
+  if (REAL_ATTIC === undefined) delete process.env.TACK_ATTIC;
+  else process.env.TACK_ATTIC = REAL_ATTIC;
+}
 
 /* The harness may run git itself -- it is building fixtures, not being the
  * tool. Only tack.js is bound by READ_ONLY_VERBS. */
@@ -702,6 +711,15 @@ function suite(TK, W, SIT, U) {
      'the untracked file still exists — restoring one would mean deleting it');
 
   section('the attic kept what was destroyed');
+
+  /* The suite must never file a rescue into the real attic. It did, for one
+   * build -- thirteen fake entries, found by running `tack attic` and reading
+   * the output. The attic is only worth anything if what is in it is yours. */
+  ok(U.atticRoot().toLowerCase().indexOf(TMP.toLowerCase()) === 0,
+     'the suite rescues into a temp attic, never the real one');
+  ok(U.atticRoot().toLowerCase().indexOf('localappdata') === -1 &&
+     U.atticRoot().toLowerCase().indexOf(path.join('appdata', 'local', 'tack').toLowerCase()) === -1,
+     'and the real attic path is nowhere near it');
 
   ok(done.attic && fs.existsSync(done.attic), 'a snapshot folder exists');
   eq(normalise(fs.readFileSync(path.join(done.attic, 'keep.txt'), 'utf8')),
