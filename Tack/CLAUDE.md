@@ -19,6 +19,7 @@ terminal. Or double-click **`Look.bat`** for the glance and **`Sit.bat`** for th
 | `tack sit [NAME]` | the pane — pick files, commit them |
 | `tack one` | a single line, for a status bar |
 | `tack faces` | every shape of him, in every mood |
+| `tack attic` | everything Tack has ever thrown away, and where it is kept |
 
 ## The one idea
 
@@ -53,26 +54,31 @@ hand-written lists forgot.
 
 ## What it may do, and how that is mechanized
 
-Two allowlists, in two files, each asserted **by value** in the selftest. Widening one means
+Three allowlists, in three files, each asserted **by value** in the selftest. Widening one means
 updating its assertion in the same commit and saying why — it happens in one visible place or it
-does not happen. There are mutants that widen each of them, and both are caught.
+does not happen. There are mutants that widen each of them, and all are caught.
 
 ```js
 tack.js    var READ_ONLY_VERBS = ['status', 'log', 'rev-parse', '--version'];
 write.js   var WRITE_VERBS     = ['add', 'commit'];
+undo.js    var RESTORE_VERBS   = ['restore'];
 ```
 
-**`tack.js` cannot write, and pass 2 did not change that.** Everything that can touch history
-lives in `write.js` instead — one file, short enough to read in a sitting, with its own choke
-point. The glance never even loads it; `sit.js` is required lazily.
+Three files, three tiers, each with its own choke point:
 
-**Nothing in Tack can undo your work.** `restore`, `checkout` and `reset` are not verbs it
-declines to run — they are verbs it has no way to express. A commit records; it does not destroy.
-That is why committing shipped a pass ahead of restoring.
+**`tack.js` cannot write, and no later pass changed that.** It is the file that runs on every
+glance, so a session reading it can confirm in one place that looking costs nothing. The glance
+never loads the other two; `sit.js` is required lazily and pulls them in.
 
-This is Mains' reasoning applied twice. Mains served five folders read-only and put writing in a
-deliberately separate pass, because the risky part should not ride along with the pass that turned
-the power on.
+**`write.js` can add and commit.** Both additive — a commit records, it cannot lose work.
+
+**`undo.js` can restore, and nothing else.** One verb. `reset`, `checkout`, `clean` and `rm` are
+not verbs Tack declines to run; they are verbs it has no way to express, and there is a mutant for
+each list that adds one back.
+
+This is Mains' reasoning applied three times. Mains served five folders read-only and put writing
+in a deliberately separate pass, because the risky part should not ride along with the pass that
+turned the power on.
 
 ### `git add -A` is inexpressible
 
@@ -115,6 +121,65 @@ permanently at risk. The block goes on the verb that can destroy it, not the ver
 There is a mutant that empties `NEVER_RESTORE`, and one that makes the match a bare prefix so a
 folder merely *starting* with the same name would be caught by it.
 
+## Putting a file back
+
+`u` in the pane. The selection is sorted into two operations that look similar and are not
+remotely alike, and the whole design is that separation:
+
+| | |
+|---|---|
+| **undelete** | a tracked file was deleted — bring it back. **Purely additive.** Nothing can be lost, so no snapshot and no confirmation |
+| **discard** | a tracked file was modified — throw the changes away. **Snapshot first, always**, then type the word `discard` in full |
+
+**An untracked file is never touched.** "Putting back" one would mean deleting it, which is
+`git clean`, which is the one operation whose result is recoverable from nowhere at all. It is
+refused by name with the reason spelled out. A conflicted file is refused too — resolve it in an
+editor, not here.
+
+### The attic
+
+Before any discard, the current bytes are copied to
+`%LOCALAPPDATA%\Tack\attic\<when>\<repo>\<path>`, with a `_where-this-came-from.txt` beside them
+explaining what happened and how to put one back. `tack attic` lists every rescue ever taken.
+Nothing there is pruned, ever.
+
+**Plain file copies, not a `git stash` and not a dangling object.** The person most likely to need
+this is the person who does not know git — so the recovery path must not require the skill whose
+absence caused the mistake. This one is: open the folder, drag the file back.
+
+It lives outside every repo, which is asserted: a snapshot inside one would show up in the next
+sweep as loose work and could end up in a commit.
+
+### The confirmation is a typed word
+
+`discard`, in full. A keypress is something you can do by accident while looking somewhere else; a
+word is not, and the word is the actual name of the operation, so typing it means having read it.
+There is a mutant that shortens it to `y`.
+
+## The live gate, and why it is a warning rather than a block
+
+**Built twice, wrong twice, removed.** Worth writing down because the reasoning generalises.
+
+*Version one* refused whenever the repo was live. That blocks the commonest honest use there is:
+you edit a file, you dislike it, you want it back — and your own edit is what made the repo live.
+**A guard that fires on the person it is meant to serve gets switched off, and then it is not a
+guard.**
+
+*Version two* refused when a file you had **not** picked moved recently, on the theory that
+movement elsewhere means somebody else is in here. It fires on an untracked file you made a minute
+ago, which is nobody's live work. And it still cannot see the case it exists for: a file another
+session is editing right now looks **exactly** like a file you were editing right now. The status
+code does not even change — an edit on top of an edit is `.M` either way — so the stale-picture
+check is blind to it too.
+
+The signal does not exist. Pretending otherwise buys a refusal that annoys the user in the common
+case and protects nobody in the rare one.
+
+So: **the attic is what makes this safe, and the warning is what makes it informed.** The confirm
+screen lists what moved in the last few minutes and says "if that was not you, somebody else may
+be working in here" — then lets the person decide, having copied the bytes out first. The worst
+outcome is a file to drag back, not work that is gone.
+
 ## The commit message
 
 The default is **derived from what actually changed** — `update CLAUDE.md, package-lock.json`,
@@ -150,16 +215,18 @@ Tack/
   tack.js            the engine and the glance. CANNOT WRITE. Tuning block at the top
   write.js           the only file that can write. Its own allowlist and guards
   sit.js             the pane -- drawing and keys. Pure enough to test without a terminal
+  undo.js            the only file that can destroy work. One verb, and the attic
   roots.json         the only hand-written list: roots, never repos
   tack.cmd           the shim, so it is one word instead of a path
   Look.bat           double-click: the glance
   Sit.bat            double-click: the pane
-  tools/selftest.js  225 assertions + 43 mutants across all three files
+  tools/selftest.js  293 assertions + 63 mutants across all four files
 ```
 
-The split is the security model, not tidiness. `tack.js` is the file that runs on every glance and
-it has no capability to write; a session reading it can confirm that in one place. `write.js` is
-the whole of the risk and it is 170 lines.
+The split is the security model, not tidiness. `tack.js` runs on every glance and has no
+capability to write, so a session reading it can confirm in one place that looking costs nothing.
+`write.js` and `undo.js` are the whole of the risk, and between them they are under 400 lines --
+short enough that reviewing what Tack may do to your machine is an afternoon, not a project.
 
 `sit.js` holds no I/O of its own — the `Sitting` object takes keys and returns whether to carry on,
 so the selftest drives a whole session through it (open a repo, pick, unpick, type a message,
@@ -279,14 +346,20 @@ read a list is a thing that pulls your eye off the list.
 
 ## Not done yet, deliberately
 
-**Pass 2b is restoring**, and it is the only genuinely dangerous verb — a commit records, a restore
-destroys. The shape, decided before any of it is written:
+**Restoring is done** (pass 2b, 24 Aug 2026). Of the four rules written here before it was built,
+three shipped as planned and one turned out to be wrong — see *The live gate* above, which is the
+most useful paragraph in this file.
 
-- **Nothing destructive without a snapshot first**, so undo has an undo.
-- **The `live` flag gates it.** Restoring a file another session is holding open is the single worst
-  thing this tool could learn to do.
-- **`NEVER_RESTORE` already exists and is already tested**, a pass ahead of the verb it guards.
-- Widening `WRITE_VERBS` is the moment to re-read this whole file.
+**Nothing here deletes a file.** Not `git clean`, not `rm`, not emptying the attic. Every verb
+Tack has either creates something or replaces a file's contents with a copy that is kept. There is
+no path through this program that ends in a file not existing where one did before, and that is
+the property to check any future pass against.
+
+It is asserted, on the case most likely to break it: `git rm --cached` leaves a file staged-deleted
+in the index while it is still sitting on disk, and git reports it as **two entries with the same
+name** -- one `deleted`, one `untracked`. Restoring a worktree from an index with no entry for that
+path is exactly the shape of an accidental delete. It survives, and the duplicate is collapsed
+before anything reaches git rather than being acted on twice with two different intentions.
 
 **A search across the tree** — one query, ten repos — is the obvious next *read*, and reads are
 cheap. `tack find <text>` would answer "where did I write that" without knowing which repo it was
@@ -301,7 +374,7 @@ without a conversation — it is the one action here that leaves the machine.
 
 ## Credits
 
-Built by **CTown 6** (Opus 5), 20 Aug 2026, with Trevor directing — sweep, creature, launchers,
+Built by **CTown 6** (Opus 5), 20-24 Aug 2026, with Trevor directing — sweep, creature, launchers,
 tests, and this file, in one session. Pass 2a — `write.js`, `sit.js`, the guards, and 90 more
 assertions — in the same session, immediately after Trevor read the first sweep.
 
@@ -311,6 +384,9 @@ mascot was originally going to be a copy of Shim; the argument against it — th
 duplicate spends the real one's credibility, and that Shim's contract (*nothing may ask an instance
 to do anything*) is the opposite of what a user-facing assistant does — is mine, and Trevor took
 it. **Tack** is Trevor's pick out of a shortlist.
+
+Pass 2b -- `undo.js`, the attic, the typed confirmation -- 24 Aug 2026, after Tack had been in
+daily use for four days and had committed its own two previous passes.
 
 Two calls of Trevor's that improved the design and are worth attributing: **blocking the whole Pet
 folder** rather than `log.js` by name, which removes a judgement call from a guard that should not

@@ -10,7 +10,13 @@
 
 var TK = require('./tack.js');
 var W  = require('./write.js');
+var U  = require('./undo.js');
 var C  = TK.C;
+
+/* Typed in full to discard. A keypress is something you can do by accident
+ * while looking somewhere else; this is not. The word is the actual name of
+ * the operation, so typing it means having read it. */
+var CONFIRM_WORD = 'discard';
 
 var ALT_ON  = '\x1b[?1049h\x1b[?25l';
 var ALT_OFF = '\x1b[?25h\x1b[?1049l';
@@ -30,7 +36,8 @@ function Sitting(cfgFile, startQuery) {
   this.repo    = null;
   this.message = '';
   this.notice  = '';
-  this.confirm = false;
+  this.typed   = '';        // what has been typed into the discard confirmation
+  this.pending = null;      // the classified restore waiting on that confirmation
   this.refresh();
 
   if (startQuery) {
@@ -136,7 +143,7 @@ Sitting.prototype.draw = function () {
     });
     L.push('');
     var n = this.selected().length;
-    L.push('  ' + C.dim('space pick · a all · c commit') +
+    L.push('  ' + C.dim('space pick · a all · c commit · u put back') +
            (n ? C.warm('  (' + n + ' picked)') : '') +
            C.dim(' · r refresh · q back'));
 
@@ -159,6 +166,42 @@ Sitting.prototype.draw = function () {
       L.push('  ' + C.live('another session may be part-way through something in it.'));
     }
 
+  } else if (this.view === 'putback') {
+    var p = this.pending;
+    L.push('  ' + C.alert('this throws work away'));
+    L.push('');
+    p.discard.forEach(function (f) {
+      L.push('    ' + C.warm(clip(f, 60)));
+    });
+    L.push('');
+    L.push('  ' + C.dim('these files go back to their last committed state. The'));
+    L.push('  ' + C.dim('changes in them are not in git anywhere — this is the one'));
+    L.push('  ' + C.dim('thing Tack does that git cannot get back for you.'));
+    L.push('');
+    L.push('  ' + C.dim('a copy is kept first, in ') + C.body(U.atticRoot()));
+    if (p.recent && p.recent.length) {
+      L.push('');
+      L.push('  ' + C.live('touched in the last few minutes:'));
+      p.recent.slice(0, 4).forEach(function (f) {
+        L.push('  ' + C.live('  ' + clip(f, 56)));
+      });
+      L.push('  ' + C.dim('  if that was not you, somebody else may be working in here.'));
+    }
+    if (p.undelete.length) {
+      L.push('');
+      L.push('  ' + C.good(p.undelete.length + ' deleted file' +
+             (p.undelete.length === 1 ? '' : 's') + ' will be put back too — that part is safe'));
+    }
+    if (p.refused.length) {
+      L.push('');
+      p.refused.forEach(function (r) {
+        L.push('  ' + C.chrome('left alone: ' + clip(r.path, 40)) + C.dim('  ' + r.why));
+      });
+    }
+    L.push('');
+    L.push('  ' + C.dim('type ') + C.alert(CONFIRM_WORD) + C.dim(' to go ahead · esc to back out'));
+    L.push('  ' + C.body('  ' + this.typed) + C.body('▏'));
+
   } else if (this.view === 'done') {
     L.push('  ' + this.notice);
     L.push('');
@@ -179,6 +222,59 @@ Sitting.prototype.defaultMsg = function () {
 
 /* ------------------------------------------------------------------- doing */
 
+/* `u` in the file list. Asks first without confirming, so the engine does the
+ * sorting and this only has to draw the answer. */
+Sitting.prototype.doPutBack = function () {
+  var picked = this.selected();
+  var res = U.restorePaths(this.repo.dir, this.repo.label, picked,
+                           { expect: this.expect, now: Date.now() });
+
+  if (res.needsConfirm) {
+    this.pending = res;
+    this.typed = '';
+    this.view = 'putback';
+    return;
+  }
+  this.reportPutBack(res);
+};
+
+Sitting.prototype.doPutBackConfirmed = function () {
+  var res = U.restorePaths(this.repo.dir, this.repo.label, this.selected(),
+                           { expect: this.expect, now: Date.now(), confirmed: true });
+  this.reportPutBack(res);
+};
+
+Sitting.prototype.reportPutBack = function (res) {
+  var L = [];
+  if (res.ok) {
+    if (res.undeleted.length) {
+      L.push(C.good('put back ' + res.undeleted.length + ' deleted file' +
+             (res.undeleted.length === 1 ? '' : 's')));
+    }
+    if (res.discarded.length) {
+      L.push(C.warm('discarded changes in ' + res.discarded.length + ' file' +
+             (res.discarded.length === 1 ? '' : 's')));
+      L.push('');
+      L.push('  ' + C.dim('a copy of what was thrown away is in'));
+      L.push('  ' + C.dim(res.attic));
+    }
+  } else {
+    L.push(C.alert('nothing was changed — ' + res.reason));
+    if (res.moved) res.moved.forEach(function (m) { L.push('  ' + C.dim(m)); });
+  }
+  if (res.refused && res.refused.length) {
+    L.push('');
+    res.refused.forEach(function (r) {
+      L.push('  ' + C.chrome('left alone: ' + r.path));
+      L.push('  ' + C.dim('  ' + r.why));
+    });
+  }
+  this.notice = L.join('\n  ');
+  this.typed = '';
+  this.pending = null;
+  this.view = 'done';
+};
+
 Sitting.prototype.doCommit = function () {
   var picked = this.selected();
   var msg = this.message.trim() || this.defaultMsg();
@@ -193,7 +289,7 @@ Sitting.prototype.doCommit = function () {
     if (res.moved) res.moved.forEach(function (m) { this.notice += '\n  ' + C.dim(m); }, this);
   }
   this.message = '';
-  this.confirm = false;
+  this.pending = null;
   this.view = 'done';
 };
 
@@ -207,6 +303,18 @@ Sitting.prototype.key = function (k) {
     if (k === '\x1b') { this.view = 'files'; this.message = ''; return true; }
     if (k === '\x7f' || k === '\b') { this.message = this.message.slice(0, -1); return true; }
     if (k >= ' ' && k <= '~' && k.length === 1) { this.message += k; return true; }
+    return true;
+  }
+
+  if (v === 'putback') {
+    if (k === '\x1b') { this.view = 'files'; this.typed = ''; this.pending = null; return true; }
+    if (k === '\x7f' || k === '\b') { this.typed = this.typed.slice(0, -1); return true; }
+    if (k === '\r' || k === '\n') {
+      if (this.typed.trim().toLowerCase() === CONFIRM_WORD) this.doPutBackConfirmed();
+      else this.notice = 'type ' + CONFIRM_WORD + ' exactly, or esc to back out';
+      return true;
+    }
+    if (k >= ' ' && k <= '~' && k.length === 1) { this.typed += k; this.notice = ''; }
     return true;
   }
 
@@ -242,6 +350,11 @@ Sitting.prototype.key = function (k) {
   if (k === 'c' || k === '\r' || k === '\n') {
     if (!this.selected().length) { this.notice = 'nothing picked yet — space picks a file'; return true; }
     this.view = 'message'; this.message = ''; this.notice = '';
+    return true;
+  }
+  if (k === 'u') {
+    if (!this.selected().length) { this.notice = 'nothing picked yet — space picks a file'; return true; }
+    this.doPutBack();
     return true;
   }
   return true;

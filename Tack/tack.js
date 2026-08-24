@@ -27,7 +27,7 @@ var T = {
   LABEL_MAX:      24,   // repo name column
   PREVIEW_MAX:    32,   // filename column
   SCAN_TIMEOUT:  8000,  // ms per git call
-  SHAPE:       'bat'    // which creature: plain | bat | batlite | ascii. `tack faces` shows them
+  SHAPE:       'plain'  // which creature: plain | bat | batlite | ascii. `tack faces` shows them
 };
 
 /* The whole of pass 1's authority over your machine. To widen this you have to
@@ -290,19 +290,24 @@ var SHAPES = {
             ' ╰──┬──╯'];
   },
   /* Ears. Trevor read `.bat` as an animal rather than as Windows' extension
-   * for a batch file, which is a better idea than the truth. */
+   * for a batch file, which is a better idea than the truth.
+   *
+   * These keep `plain`'s exact width. The first version widened the head to
+   * eight to give the ears room, and the wider proportions stopped reading as
+   * a tack -- which was the whole name. The ears fit at the narrow width; the
+   * widening was a choice, and the wrong one. */
   bat: function (eyes) {
-    return [' ╱╲   ╱╲ ',
-            '╭───────╮',
-            '│  ' + eyes + '  │',
-            '╰───┬───╯'];
+    return [' ╱╲   ╱╲',
+            ' ╭─────╮',
+            ' │ ' + eyes + ' │',
+            ' ╰──┬──╯'];
   },
   /* The same, in characters every font has had since forever. */
   batlite: function (eyes) {
-    return [' /\\   /\\ ',
-            '╭───────╮',
-            '│  ' + eyes + '  │',
-            '╰───┬───╯'];
+    return [' /\\   /\\',
+            ' ╭─────╮',
+            ' │ ' + eyes + ' │',
+            ' ╰──┬──╯'];
   },
   /* For a console that cannot draw box-drawing glyphs at all. */
   ascii: function (eyes) {
@@ -426,8 +431,8 @@ function render(s) {
   }
   L.push('');
   if (t.files) {
-    L.push('  ' + C.dim('`tack show <name>` for the file list · `tack sit` to commit'));
-    L.push('  ' + C.dim('nothing here can restore, reset or undo your work.'));
+    L.push('  ' + C.dim('`tack show <name>` for the file list · `tack sit` to commit or put back'));
+    L.push('  ' + C.dim('anything discarded is copied to the attic first — `tack attic`.'));
     L.push('');
   }
   for (var k = 0; k < s.missingRoots.length; k++) {
@@ -525,6 +530,37 @@ function renderFaces() {
   return L.map(trimEnd);
 }
 
+/* ------------------------------------------------------------------ attic */
+
+/* Everything Tack has ever thrown away on your behalf. Nothing here is ever
+ * pruned, and the point of the command is that the folder is findable without
+ * already knowing where it is. */
+function renderAttic(entries, root, now) {
+  var L = [''];
+  if (!entries.length) {
+    L.push('  ' + C.dim('nothing in the attic. Tack has never discarded anything.'));
+    L.push('');
+    L.push('  ' + C.dim('when it does, a copy of what was thrown away goes to'));
+    L.push('  ' + C.dim(root));
+    L.push('');
+    return L.map(trimEnd);
+  }
+  L.push('  ' + C.body(entries.length + ' rescue' + (entries.length === 1 ? '' : 's')) +
+         C.dim(' · nothing here is ever deleted'));
+  L.push('');
+  var w = entries.reduce(function (m, e) { return Math.max(m, e.label.length); }, 4);
+  entries.forEach(function (e) {
+    L.push('  ' + C.dim(e.stamp.replace('T', '  ')) + '  ' +
+           C.body(pad(e.label, w)) + '  ' +
+           C.warm(e.files + ' file' + (e.files === 1 ? '' : 's')));
+  });
+  L.push('');
+  L.push('  ' + C.dim('they are plain files. Open the folder and copy one back:'));
+  L.push('  ' + C.dim(root));
+  L.push('');
+  return L.map(trimEnd);
+}
+
 /* ---------------------------------------------------------------- one-line */
 
 function renderOne(s) {
@@ -543,14 +579,16 @@ var HELP = [
   '  tack sit [NAME] the live pane -- pick files and commit them',
   '  tack one        a single line, for a status bar',
   '  tack faces      every shape of him, in every mood',
+  '  tack attic      everything Tack has ever thrown away, and where it is',
   '  tack --json     the same sweep as data',
   '',
   '  --no-color      plain text',
   '  --shape=NAME    plain | bat | batlite | ascii  (see `tack faces`)',
   '',
-  '  Tack can add and commit. It cannot restore, reset, or check out --',
-  '  nothing here can undo your work. It also has no way to express',
-  '  `git add -A`: it stages only paths it has shown you.',
+  '  Tack stages only paths it has shown you -- `git add -A` is not a thing',
+  '  it declines, it is a thing it cannot express. Discarding a change always',
+  '  copies it to the attic first. It cannot reset, check out, or delete an',
+  '  untracked file at all.',
   ''
 ].join('\n');
 
@@ -575,6 +613,12 @@ function main(argv) {
   /* Purely cosmetic, so it does not pay for a sweep of ten repos first. */
   if (args[0] === 'faces') {
     process.stdout.write(renderFaces().join('\n') + '\n'); return 0;
+  }
+  if (args[0] === 'attic') {
+    var U = require('./undo.js');
+    process.stdout.write(renderAttic(U.listAttic(), U.atticRoot(), Date.now())
+                         .join('\n') + '\n');
+    return 0;
   }
 
   var cfgFile = path.join(__dirname, 'roots.json');
@@ -616,7 +660,7 @@ module.exports = {
   parseStatusV2: parseStatusV2, describe: describe, findRepos: findRepos,
   discover: discover, loadRoots: loadRoots, expandHome: expandHome,
   labelFor: labelFor, readRepo: readRepo, sweep: sweep, rank: rank,
-  render: render, renderShow: renderShow, expandMatches: expandMatches, trimEnd: trimEnd, renderOne: renderOne, previewOf: previewOf,
+  render: render, renderShow: renderShow, renderAttic: renderAttic, expandMatches: expandMatches, trimEnd: trimEnd, renderOne: renderOne, previewOf: previewOf,
   creature: creature, headBlock: headBlock, SHAPES: SHAPES, renderFaces: renderFaces,
   moodOf: moodOf, ago: ago, visLen: visLen, padVis: padVis, C: C,
   main: main

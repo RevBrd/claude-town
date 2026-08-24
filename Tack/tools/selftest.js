@@ -44,6 +44,12 @@ function throws(fn, what) {
 }
 function section(s) { if (!QUIET) console.log('\n' + s); }
 
+/* git's core.autocrlf rewrites line endings on checkout, so a file restored on
+ * Windows comes back with CRLF whatever went in. Compare content, not
+ * line-ending policy -- otherwise the suite passes or fails on a git setting
+ * rather than on anything Tack does. */
+function normalise(s) { return String(s).replace(/\r\n/g, '\n'); }
+
 /* ------------------------------------------------------------------ tmp fs */
 
 var TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'tack-test-'));
@@ -59,7 +65,7 @@ function rawGit(dir, args) {
 
 /* ------------------------------------------------------------------- suite */
 
-function suite(TK, W, SIT) {
+function suite(TK, W, SIT, U) {
 
   section('the read-only guarantee');
 
@@ -343,10 +349,17 @@ function suite(TK, W, SIT) {
   ok(lines.length > 5, 'the readout has content');
   eq(lines.filter(function (l) { return /\s$/.test(l); }).length, 0,
      'no rendered line has trailing whitespace');
-  /* The glance has to state its own limits, because a tool that can commit
-   * and a tool that can also revert look identical from the outside. */
-  ok(/cannot restore, reset or undo|restore, reset or undo/.test(lines.join('\n')),
-     'the readout says out loud that it cannot undo your work');
+  /* The glance has to state its own limits, because a tool that can commit and
+   * a tool that can also throw work away look identical from the outside.
+   *
+   * This assertion has now been rewritten twice, each time because the true
+   * statement changed -- first it said "read-only", then "cannot undo", and
+   * now that discarding exists the load-bearing fact is where the copy goes.
+   * Both times the harness went red on a doc edit, which is the behaviour to
+   * keep: a tool whose printed description of itself has drifted from what it
+   * does is worse than one that never described itself. */
+  ok(/attic/.test(lines.join('\n')),
+     'the readout says out loud where discarded work is kept');
 
   var plainState = JSON.parse(JSON.stringify(state));
   plainState.totals = { repos: 3, dirty: 0, files: 0, empty: 0, errors: 0, oldest: null };
@@ -610,6 +623,231 @@ function suite(TK, W, SIT) {
   back.key('\r');
   eq(back.key('q'), true, 'but q inside a repo goes back rather than quitting');
   eq(back.view, 'repos', 'and lands on the repo list');
+
+  /* =================================================================== undo */
+
+  section('what undo.js may do');
+
+  eq(U.RESTORE_VERBS, ['restore'], 'RESTORE_VERBS is exactly one verb');
+  ['reset', 'clean', 'checkout', 'rm', 'stash', 'commit', 'add'].forEach(function (v) {
+    throws(function () { U.gitRestore(TMP, [v]); }, 'undo.js refuses `git ' + v + '`');
+  });
+
+  /* --staged would destroy an index another session is holding; --source would
+   * restore from an arbitrary commit rather than from what is already recorded.
+   * Neither is needed, and both are worse than what they replace. */
+  ['--staged', '-S', '--source', '-s', '--overlay'].forEach(function (f) {
+    throws(function () { U.gitRestore(TMP, ['restore', f, 'x']); },
+           'undo.js refuses to reach past the working tree: ' + f);
+  });
+  throws(function () { U.gitRestore(TMP, ['restore', '--', '-A']); },
+         'and a wholesale pathspec is refused here too');
+
+  section('sorting a selection into safe and dangerous');
+
+  var sorted = U.classify([
+    { path: 'gone.txt',  state: 'tracked',   xy: '.D' },
+    { path: 'edit.txt',  state: 'tracked',   xy: '.M' },
+    { path: 'new.txt',   state: 'untracked', xy: '??' },
+    { path: 'clash.txt', state: 'unmerged',  xy: 'UU' }
+  ]);
+  eq(sorted.undelete, ['gone.txt'], 'a deleted tracked file is an undelete');
+  eq(sorted.discard,  ['edit.txt'], 'a modified file is a discard');
+  eq(sorted.refused.map(function (r) { return r.path; }), ['new.txt', 'clash.txt'],
+     'untracked and conflicted files are refused');
+  ok(/deleting it/.test(sorted.refused[0].why),
+     'and the untracked one explains that putting it back would mean deleting it');
+
+  section('putting files back, for real');
+
+  var urepo = tmp('undoable');
+  rawGit(urepo, ['init', '-q']);
+  rawGit(urepo, ['config', 'user.email', 'test@example.com']);
+  rawGit(urepo, ['config', 'user.name', 'Test']);
+  fs.writeFileSync(path.join(urepo, 'keep.txt'), 'committed content\n');
+  fs.writeFileSync(path.join(urepo, 'gone.txt'), 'deleted later\n');
+  rawGit(urepo, ['add', '.']);
+  rawGit(urepo, ['commit', '-qm', 'base']);
+
+  fs.writeFileSync(path.join(urepo, 'keep.txt'), 'PRECIOUS UNSAVED EDITS\n');
+  fs.unlinkSync(path.join(urepo, 'gone.txt'));
+  fs.writeFileSync(path.join(urepo, 'mine.txt'), 'untracked\n');
+
+  var uNow = Date.now();
+  var ust = TK.readRepo(urepo, uNow, { untracked: 'all' });
+  var uexp = {};
+  ust.files.forEach(function (f) { uexp[f.path] = f.xy; });
+  var upaths = ust.files.map(function (f) { return f.path; });
+
+  /* The dangerous half never runs on the first ask. */
+  var first = U.restorePaths(urepo, 'undoable', upaths,
+                             { expect: uexp, now: uNow });
+  ok(!first.ok, 'a selection containing a discard is not done without confirming');
+  ok(first.needsConfirm, 'and it says what it is waiting for');
+  eq(first.discard, ['keep.txt'], 'and names exactly what would be lost');
+  eq(normalise(fs.readFileSync(path.join(urepo, 'keep.txt'), 'utf8')), 'PRECIOUS UNSAVED EDITS\n',
+     'and the file is untouched meanwhile');
+
+  var done = U.restorePaths(urepo, 'undoable', upaths,
+                            { expect: uexp, now: uNow, confirmed: true });
+  ok(done.ok, 'confirming does it');
+  eq(done.undeleted, ['gone.txt'], 'the deleted file is reported as put back');
+  eq(done.discarded, ['keep.txt'], 'the modified file is reported as discarded');
+  ok(fs.existsSync(path.join(urepo, 'gone.txt')), 'the deleted file is actually back');
+  eq(normalise(fs.readFileSync(path.join(urepo, 'keep.txt'), 'utf8')), 'committed content\n',
+     'the modified file is actually back to its committed state');
+
+  /* The one that matters most. */
+  ok(fs.existsSync(path.join(urepo, 'mine.txt')),
+     'the untracked file still exists — restoring one would mean deleting it');
+
+  section('the attic kept what was destroyed');
+
+  ok(done.attic && fs.existsSync(done.attic), 'a snapshot folder exists');
+  eq(normalise(fs.readFileSync(path.join(done.attic, 'keep.txt'), 'utf8')),
+     'PRECIOUS UNSAVED EDITS\n',
+     'and holds the exact bytes that git can no longer produce');
+  ok(fs.existsSync(path.join(done.attic, '_where-this-came-from.txt')),
+     'with a note saying where they came from and how to put one back');
+  ok(!fs.existsSync(path.join(done.attic, 'gone.txt')),
+     'an undelete is not snapshotted — it destroys nothing');
+
+  /* Outside every repo, or a snapshot would show up in the next sweep as
+   * loose work, and could land in a commit. */
+  var atticIn = TK.sweep(path.join(ROOT, 'roots.json'), Date.now()).repos
+    .some(function (r) { return U.atticRoot().toLowerCase()
+                                 .indexOf(r.dir.toLowerCase() + path.sep) === 0; });
+  ok(!atticIn, 'the attic is not inside any repo Tack sweeps');
+
+  ok(U.listAttic().length > 0, 'the attic lists what is in it');
+  ok(U.listAttic().every(function (e) { return e.stamp && e.label && e.dir; }),
+     'and every entry knows when and where it came from');
+  ok(TK.renderAttic(U.listAttic(), U.atticRoot(), Date.now()).join('\n')
+     .indexOf(U.atticRoot()) !== -1,
+     'and the readout prints the folder, so it can be found without knowing it');
+  ok(TK.renderAttic([], U.atticRoot(), Date.now()).join('\n').indexOf('never discarded') !== -1,
+     'an empty attic says so rather than printing nothing');
+
+  section('restore refuses the things it must');
+
+  eq(U.restorePaths(petDir, 'Pet', ['log.js'], { confirmed: true }).ok, false,
+     'the Pet folder is refused before anything is read');
+  ok(/append-only|never restored/.test(
+       U.restorePaths(petDir, 'Pet', ['log.js'], { confirmed: true }).reason),
+     'and says why');
+
+  throws(function () {
+    U.restorePaths(urepo, 'x', ['../escape.txt'], { confirmed: true });
+  }, 'a path that escapes the repo throws');
+
+  eq(U.restorePaths(urepo, 'x', [], { confirmed: true }).ok, false,
+     'restoring nothing is refused');
+
+  /* Recent movement WARNS and never blocks. Two versions of a block were built
+   * and both were wrong: one refused you for editing the file you wanted back,
+   * the other refused you because an unrelated untracked file was new -- and
+   * neither could see the case they existed for, because another session
+   * editing your file looks exactly like you editing your file. The attic is
+   * what makes this safe; the warning is what makes it informed. */
+  fs.writeFileSync(path.join(urepo, 'keep.txt'), 'edited just now\n');
+  fs.writeFileSync(path.join(urepo, 'someone-else.txt'), 'their work in progress\n');
+  var withOther = TK.readRepo(urepo, Date.now(), { untracked: 'all' });
+  var oexp = {};
+  withOther.files.forEach(function (f) { oexp[f.path] = f.xy; });
+
+  var asked = U.restorePaths(urepo, 'undoable', ['keep.txt'], { expect: oexp });
+  ok(asked.needsConfirm, 'discarding a file you just edited yourself is not blocked');
+  ok(asked.recent && asked.recent.length,
+     'but what moved recently comes back as a warning');
+  ok(/someone-else/.test(asked.recent.join(' ')),
+     'and it names the file that moved');
+
+  var mineOnly = U.restorePaths(urepo, 'undoable', ['keep.txt'],
+                                { expect: oexp, confirmed: true });
+  ok(mineOnly.ok, 'and confirming still goes through — the attic is the safety net');
+  eq(normalise(fs.readFileSync(path.join(urepo, 'keep.txt'), 'utf8')),
+     'committed content\n', 'the file went back');
+  ok(fs.existsSync(path.join(urepo, 'someone-else.txt')),
+     "and the other file was never touched — restore only reaches what you picked");
+
+  section('nothing Tack does makes a file stop existing');
+
+  /* The claim in CLAUDE.md is that no path through this program ends with a
+   * file gone that was there before. The case that could falsify it: `git rm
+   * --cached` leaves a file staged-deleted in the index while it is still
+   * sitting on disk, reported as TWO entries with the same name -- one
+   * `deleted`, one `untracked`. Restoring the worktree from an index that has
+   * no entry for it is exactly the shape of an accidental delete. */
+  var edge = tmp('edgecase');
+  rawGit(edge, ['init', '-q']);
+  rawGit(edge, ['config', 'user.email', 'test@example.com']);
+  rawGit(edge, ['config', 'user.name', 'Test']);
+  fs.writeFileSync(path.join(edge, 'f.txt'), 'content\n');
+  rawGit(edge, ['add', '.']);
+  rawGit(edge, ['commit', '-qm', 'base']);
+  rawGit(edge, ['rm', '--cached', '-q', 'f.txt']);
+
+  var est = TK.readRepo(edge, Date.now(), { untracked: 'all' });
+  var epaths = est.files.map(function (f) { return f.path; });
+  eq(epaths, ['f.txt', 'f.txt'], 'the same path really is reported twice');
+
+  var eexp = {};
+  est.files.forEach(function (f) { eexp[f.path] = f.xy; });
+  U.restorePaths(edge, 'edgecase', epaths, { expect: eexp, confirmed: true });
+  ok(fs.existsSync(path.join(edge, 'f.txt')),
+     'and the file is still there afterwards');
+  eq(normalise(fs.readFileSync(path.join(edge, 'f.txt'), 'utf8')), 'content\n',
+     'with its contents intact');
+
+  section('putting back, through the pane');
+
+  var pbCfg = path.join(TMP, 'pb-roots.json');
+  fs.writeFileSync(pbCfg, JSON.stringify({
+    roots: [{ path: path.join(TMP, 'undoable'), depth: 0 }], skip: ['.git'] }));
+
+  /* The engine tests above already put keep.txt back, so it is clean now.
+   * Dirty it again -- the pane can only offer what is actually loose. */
+  fs.writeFileSync(path.join(urepo, 'keep.txt'), 'edited again\n');
+
+  var ps = new SIT.Sitting(pbCfg);
+  ps.key('\r');
+  eq(ps.view, 'files', 'the pane opens the repo');
+  ps.key('u');
+  ok(/nothing picked/.test(ps.notice), 'u with nothing picked says so');
+
+  /* Pick the modified file specifically. */
+  var idx = ps.repo.files.map(function (f) { return f.path; }).indexOf('keep.txt');
+  ok(idx !== -1, 'keep.txt is in the list');
+  ps.cursor = idx;
+  ps.key(' ');
+  ps.key('u');
+  eq(ps.view, 'putback', 'u on a modified file asks to confirm');
+  ok(ps.draw().indexOf('throws work away') !== -1, 'and says plainly what it is');
+  ok(ps.draw().indexOf(U.atticRoot()) !== -1, 'and where the copy will go');
+
+  ps.key('y'); ps.key('e'); ps.key('s'); ps.key('\r');
+  eq(ps.view, 'putback', 'the wrong word does not go through');
+  ok(/type discard exactly/.test(ps.notice), 'and says what is needed');
+  eq(normalise(fs.readFileSync(path.join(urepo, 'keep.txt'), 'utf8')), 'edited again\n',
+     'and the file is untouched');
+
+  ps.key('\x1b');
+  eq(ps.view, 'files', 'escape backs out');
+  eq(ps.typed, '', 'and forgets what was typed');
+  eq(ps.pending, null, 'and forgets what was pending');
+
+  ps.key('u');
+  'discard'.split('').forEach(function (ch) { ps.key(ch); });
+  eq(ps.typed, 'discard', 'the word can be typed');
+  ps.key('\x7f');
+  eq(ps.typed, 'discar', 'and backspaced');
+  ps.key('d');
+  ps.key('\r');
+  eq(ps.view, 'done', 'the right word goes through');
+  eq(normalise(fs.readFileSync(path.join(urepo, 'keep.txt'), 'utf8')), 'committed content\n',
+     'and the file really did go back');
+  ok(/discarded/.test(ps.notice), 'and the report says what happened');
+  ok(ps.notice.indexOf(U.atticRoot()) !== -1, 'and where the copy is');
 }
 
 /* ---------------------------------------------------------------- mutation */
@@ -659,8 +897,8 @@ var MUTANTS = [
    "    return [' ╭─────╮',\n            ' │' + eyes + '│',\n            ' ╰──┬──╯'];"],
 
   ['the ears are a different width from the head',
-   "    return [' ╱╲   ╱╲ ',",
-   "    return [' ╱╲   ╱╲',"],
+   "    return [' ╱╲   ╱╲',\n            ' ╭─────╮',",
+   "    return [' ╱╲   ╱╲ ',\n            ' ╭─────╮',"],
 
   ['the ascii fallback shears instead',
    "    return [' ,---. ',\n            '( ' + eyes + ' )',\n            \" `-|-' \"];",
@@ -797,12 +1035,99 @@ var MUTANTS_SIT = [
    "  var res = W.commitPaths(this.repo.dir, picked, msg, null, Date.now());"]
 ].map(function (m) { return { file: 'sit.js', name: m[0], from: m[1], to: m[2] }; });
 
-MUTANTS = MUTANTS.concat(MUTANTS_WRITE, MUTANTS_SIT);
+/* The restore layer. This is the only part of Tack that can destroy work, so
+ * every guarantee here gets a mutant that removes it. */
+var MUTANTS_UNDO = [
+  ['a discard runs without being confirmed',
+   "  if (sorted.discard.length && !opts.confirmed) {",
+   "  if (false) {"],
+
+  ['nothing is copied to the attic first',
+   "  if (sorted.discard.length) {\n    kept = snapshot(repoDir, label, sorted.discard, now);",
+   "  if (false) {\n    kept = snapshot(repoDir, label, sorted.discard, now);"],
+
+  ['a failed snapshot no longer stops the discard',
+   "    if (!kept.saved.length) {",
+   "    if (false) {"],
+
+  ['an untracked file is treated as something to restore',
+   "    if (word === 'untracked') {\n      out.refused.push({ path: f.path, why: 'untracked — putting this back would mean deleting it' });",
+   "    if (word === 'untracked') {\n      out.discard.push(f.path);"],
+
+  ['a conflicted file is restored instead of left alone',
+   "    } else if (word === 'conflicted') {",
+   "    } else if (false) {"],
+
+  ['a deletion is classed as a discard, so undeleting asks to confirm',
+   "    } else if (word === 'deleted') {\n      out.undelete.push(f.path);",
+   "    } else if (false) {\n      out.undelete.push(f.path);"],
+
+  ['the Pet folder stops being refused for restore',
+   "  if (W.isBlockedForRestore(repoDir)) {",
+   "  if (false) {"],
+
+  ['restore stops checking for a stale picture',
+   "  if (moved.length) {",
+   "  if (false) {"],
+
+  ['--staged stops being forbidden',
+   "var FORBIDDEN_FLAGS = ['--staged', '-S', '--source', '-s', '--overlay'];",
+   "var FORBIDDEN_FLAGS = ['-S', '--source', '-s', '--overlay'];"],
+
+  ['the forbidden-flag check is skipped',
+   "    if (FORBIDDEN_FLAGS.indexOf(args[i]) !== -1) {",
+   "    if (false) {"],
+
+  ['undo.js accepts any git verb',
+   "  if (RESTORE_VERBS.indexOf(verb) === -1) {",
+   "  if (false) {"],
+
+  ['a wholesale pathspec is no longer refused on restore',
+   "  W.assertNoWholesale(args);",
+   "  /* skipped */"],
+
+  ['the restore is not limited to the paths you picked',
+   "  var r = gitRestore(repoDir, ['restore', '--'].concat(doing));",
+   "  var r = gitRestore(repoDir, ['restore', '--'].concat(Object.keys(current)));"],
+
+  ['the attic moves inside the repo it is rescuing from',
+   "  var base = process.env.LOCALAPPDATA ||\n             path.join(os.homedir(), 'AppData', 'Local');\n  return path.join(base, 'Tack', 'attic');",
+   "  return path.join(__dirname, 'attic');"],
+
+  ['the attic keeps no note of where the files came from',
+   "  if (saved.length) {\n    fs.writeFileSync(path.join(dir, '_where-this-came-from.txt'),",
+   "  if (false) {\n    fs.writeFileSync(path.join(dir, '_where-this-came-from.txt'),"],
+
+  ['recent movement is never reported to the caller',
+   "  var recent = fresh.files.filter(function (f) {\n    return f.mtime && now - f.mtime < TK.T.LIVE_MINUTES * 60000;\n  }).map(function (f) { return f.path + ' (' + TK.ago(f.mtime, now) + ')'; });",
+   "  var recent = [];"]
+].map(function (m) { return { file: 'undo.js', name: m[0], from: m[1], to: m[2] }; });
+
+var MUTANTS_SIT2 = [
+  ['the confirmation word is not checked',
+   "      if (this.typed.trim().toLowerCase() === CONFIRM_WORD) this.doPutBackConfirmed();",
+   "      if (true) this.doPutBackConfirmed();"],
+
+  ['u puts files back without ever asking',
+   "  if (res.needsConfirm) {",
+   "  if (false) {"],
+
+  ['backing out of a discard leaves it pending',
+   "    if (k === '\\x1b') { this.view = 'files'; this.typed = ''; this.pending = null; return true; }",
+   "    if (k === '\\x1b') { this.view = 'files'; return true; }"],
+
+  ['the confirmation is a single keypress instead of a word',
+   "var CONFIRM_WORD = 'discard';",
+   "var CONFIRM_WORD = 'y';"]
+].map(function (m) { return { file: 'sit.js', name: m[0], from: m[1], to: m[2] }; });
+
+MUTANTS = MUTANTS.concat(MUTANTS_WRITE, MUTANTS_SIT, MUTANTS_UNDO, MUTANTS_SIT2);
 
 var SOURCES = {
   'tack.js':  fs.readFileSync(path.join(ROOT, 'tack.js'),  'utf8'),
   'write.js': fs.readFileSync(path.join(ROOT, 'write.js'), 'utf8'),
-  'sit.js':   fs.readFileSync(path.join(ROOT, 'sit.js'),   'utf8')
+  'sit.js':   fs.readFileSync(path.join(ROOT, 'sit.js'),   'utf8'),
+  'undo.js':  fs.readFileSync(path.join(ROOT, 'undo.js'),  'utf8')
 };
 
 function runMutants() {
@@ -832,12 +1157,13 @@ function runMutants() {
     try {
       delete require.cache[require.resolve(file)];
       var mutated = require(file);
-      var mods = { TK: TK, W: W, SIT: SIT };
+      var mods = { TK: TK, W: W, SIT: SIT, U: U };
       if (m.file === 'tack.js')  mods.TK  = mutated;
       if (m.file === 'write.js') mods.W   = mutated;
       if (m.file === 'sit.js')   mods.SIT = mutated;
+      if (m.file === 'undo.js')  mods.U   = mutated;
       var hush = console.log; console.log = function () {};
-      try { suite(mods.TK, mods.W, mods.SIT); } finally { console.log = hush; }
+      try { suite(mods.TK, mods.W, mods.SIT, mods.U); } finally { console.log = hush; }
       died = fail > before.fail;
     } catch (e) {
       died = true; /* a mutant that crashes the suite is caught, loudly */
@@ -871,8 +1197,9 @@ console.log('=== tack selftest ===');
 var TK  = require(SOURCE);
 var W   = require(path.join(ROOT, 'write.js'));
 var SIT = require(path.join(ROOT, 'sit.js'));
+var U   = require(path.join(ROOT, 'undo.js'));
 TK.C.on = false;
-suite(TK, W, SIT);
+suite(TK, W, SIT, U);
 
 var mut = { escaped: [], skipped: [] };
 if (!NO_MUT) mut = runMutants();
