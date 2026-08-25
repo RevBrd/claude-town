@@ -13,3 +13,4 @@
 # Electron shell (step 1). Big and rebuildable; not part of the deliverable.
 node_modules/
 dist/
+.mutant-fd-*.tmp.js

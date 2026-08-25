@@ -69,16 +69,19 @@ that tree may reorganise itself first.
 
 ```
 Marquee/
-  CLAUDE.md         this file
-  marquee.html      the launcher — open this
-  venue.json        the floor plan: which roots are rooms
-  tools/derive.js   the derivation layer — scan, join, resolve, report
-  tools/live.js     the second reader: the same derivation, run in the browser over Mains
-  tools/selftest.js fixture assertions + mutation suite (derive.js)
-  tools/smoke.js    does the page boot and draw the manifest? (file://, on batteries)
-  tools/agree.js    do the two readers agree? (http://, on the mains)
-  manifest.json     generated; the join, as data
-  manifest.js       generated; the same thing as a <script src>-able global
+  CLAUDE.md          this file
+  marquee.html       the launcher — open this
+  marquee.js         the front door from a prompt — the THIRD reader of derive.js
+  marquee.cmd        the shim, so it is one word instead of a path
+  venue.json         the floor plan: which roots are rooms
+  tools/derive.js    the derivation layer — scan, join, resolve, report
+  tools/live.js      the second reader: the same derivation, run in the browser over Mains
+  tools/selftest.js  fixture assertions + mutation suite (derive.js)
+  tools/frontdoor.js fixture assertions + mutation suite (marquee.js)
+  tools/smoke.js     does the page boot and draw the manifest? (file://, on batteries)
+  tools/agree.js     do the two readers agree? (http://, on the mains)
+  manifest.json      generated; the join, as data
+  manifest.js        generated; the same thing as a <script src>-able global
 ```
 
 `manifest.*` are **generated — never hand-edit them.** Run `node tools/derive.js --write`.
@@ -118,6 +121,61 @@ converges in five passes and about 160 requests against the live tree, in under 
 
 If anything goes wrong it falls back to `manifest.js` **and says so on the page.**
 
+## The front door, from a prompt
+
+```bash
+marquee              # what is playing
+marquee dead space   # open it
+marquee find sand    # what matches, without opening anything
+```
+
+The folder is on the user PATH as of 24 Aug 2026, so `marquee` works from any directory.
+
+**It is a third reader of `derive.js`, never a third catalog.** The page reads the derivation, the
+live path re-runs it in the browser, and this runs it under node — one answer to "what is in this
+building". A launcher with its own list is the exact thing the whole project exists to avoid, and
+it would rot faster than the others, because nobody reads a launcher's config. A full fresh
+derivation costs about 200 ms, so there is no reason to ever read `manifest.json` here.
+
+### Matching, and the rule it inherits
+
+A query is normalised the way somebody types it — case flattened, punctuation dropped, `Æ`
+spelled out — then tried against each work's **name** at five tiers, best first: exact, prefix,
+whole-words-in-order, spaces-removed, initials. The tier that matched is printed, because "you
+typed its name" and "I found this by its initials" deserve different amounts of trust.
+
+**Ambiguity is never resolved by guessing**, exactly as with entry points, and for the same
+reason: `dead` is two games and `sandbox` is three, and opening the wrong one looks precisely like
+it worked. More than one hit lists them and stops.
+
+### Names are searched before titles, and that is load-bearing
+
+A work answers to its **display name** and its **folder**. Its HTML `<title>` is searched too, but
+only in a **second pass, after the names find nothing**.
+
+That split was a bug first. Titles are prose: Combat Circuit's is `COMBAT CIRCUIT — Sandbox` and
+Dead Reckoning's is `DEAD RECKONING — Flight Sandbox`. Searched at the same rank as names, `sandbox`
+returned **five** works — the three actually called Sandbox plus two unrelated games that merely
+describe themselves that way. As a fallback the same field is pure gain: `block party` finds Dead
+Space, `i guess` finds Blocks IG. It widens a miss instead of muddying a hit. There is a mutant
+that promotes titles back to peer rank.
+
+### Two path bugs worth remembering
+
+Both looked right in a listing and opened nothing.
+
+**The `url` field is the tested path; do not rebuild one.** Reconstructing from wing root + folder
++ entry seems equivalent and is not — the Pet is a *resident* whose root is relative **and** whose
+folder repeats that root's last segment, producing `.claude/Pet/Pet/pet.html`.
+
+**`url` is percent-encoded, because its other consumer is a browser.** Half this tree has a space
+in its path, and `%20` in a filesystem path opens nothing. It is decoded with `derive.js`'s own
+`decodeTarget` — the exact inverse of the `encodeUrl` that produced it, rather than a second guess
+at what that encoding was.
+
+Both are asserted against the live tree, along with "every openable work resolves to a file that
+exists" and "no resolved path repeats a folder name".
+
 ## Commands
 
 **`marquee.html` holds no list of games and must never grow one** — not even as a fallback for a
@@ -137,6 +195,10 @@ node tools/derive.js --write
 
 ```bash
 node tools/selftest.js
+```
+
+```bash
+node tools/frontdoor.js
 ```
 
 ```bash
@@ -262,6 +324,17 @@ drift block, break the playable filter, inject a syntax error; all three go red.
 dir before loading, which is correct for a self-contained file and wrong here: `marquee.html`
 loads `manifest.js` by relative path, so a copy in tmp renders the "no manifest" state and passes
 cheerfully having shown nothing. `smoke.js` copies alongside the original instead.
+
+`frontdoor.js` covers the terminal front door — 48 assertions and 9 mutants. Same rule about
+*where* to assert: matching is pure, so it runs against a **synthetic list of works**, because
+asserting that "dead space" opens Dead Space would encode a fact about a game somebody may rename
+tomorrow. Its fixture is one entry per hazard — two names sharing a prefix, three names sharing a
+word, a work whose `<title>` says Sandbox and whose name does not, a ligature, punctuation nobody
+types, a `no-build`, an `ambiguous`.
+
+Only invariants of the *derivation* are asserted against the live tree, and each of the four is a
+bug that actually happened: every openable work resolves to a file that exists, no resolved path
+is still percent-encoded, none repeats a folder name, all are absolute.
 
 `agree.js` covers the seam neither of the others can see. `selftest.js` runs `derive.js` under node
 against a fixture and would stay green forever while the browser path quietly returned something
@@ -456,6 +529,12 @@ physically present, just quiet enough to ignore.
 ---
 
 Built by **CTown-4** (Opus 5), 17 Aug 2026. Named for the sign, not the building.
+
+The terminal front door — `marquee.js`, `marquee.cmd`, `tools/frontdoor.js` — by **CTown 6**
+(Opus 5), 24 Aug 2026, from Trevor's ask for a way to open a work by part of its name. It was
+proposed for [Tack](../Tack/) and moved here instead: Tack's vocabulary is closed to git on
+purpose, and the thing that knows what is playing should be the thing that opens it. Sharing
+`derive.js` is what makes a second front door safe rather than a second catalog.
 
 The live catalog — the I/O seam in `derive.js`, `tools/live.js`, `tools/agree.js`, and the prelude
 in `marquee.html` — by **CTown-5** (Opus 5), 20 Aug 2026. The seam was proven inert before the
