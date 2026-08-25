@@ -20,6 +20,7 @@ terminal. Or double-click **`Look.bat`** for the glance and **`Sit.bat`** for th
 | `tack one` | a single line, for a status bar |
 | `tack faces` | every shape of him, in every mood |
 | `tack attic` | everything Tack has ever thrown away, and where it is kept |
+| `tack open NAME` | the back door — open a file, or a repo folder, from anywhere in the sweep |
 
 ## The one idea
 
@@ -156,6 +157,69 @@ sweep as loose work and could end up in a commit.
 word is not, and the word is the actual name of the operation, so typing it means having read it.
 There is a mutant that shortens it to `y`.
 
+## The back door
+
+```bash
+tack open marquee.html      # the file
+tack open salient_job1      # an early build Marquee deliberately hides
+tack open games             # the folder, in Explorer
+```
+
+**This is not a second Marquee and must never become one.** [Marquee](../Marquee/) opens **works**:
+a curated, derived catalog that deliberately admits nothing outside a curated collection and
+deliberately hides predecessors. This opens **files**, by path, from the ten repos Tack already
+sweeps. The critter rule bars two things *deriving the same answer*, because those drift apart
+silently — a path is not a derivation, and the filesystem cannot drift from itself.
+
+Trevor's framing, 24 Aug 2026, and it is the argument that changed the design: this is the
+**admin route**, for when the part of the system that normally opens things is itself the thing
+being taken apart. He was mid-way through an Electron shell for Marquee and needed something that
+could open Marquee without going through Marquee.
+
+**It shares no code with Marquee, and that is deliberate rather than lazy.** Importing `derive.js`
+would be tidier and would couple the back door to the front one. A back door that imports the
+front door is not a back door.
+
+**It does not ask git anything.** It resolves where the repos are straight from the filesystem, so
+it costs 100 ms rather than 1.5 s — and it still works when git is missing, locked, or has a
+corrupt index. A door that only opens while the house is fine is not a back door either.
+
+### Two rules, both mechanized
+
+**Nothing outside the swept repos is reachable.** Containment is checked on the *result* of
+resolution, never assumed from where the walk found it, because a junction pointing out of a repo
+is exactly what a directory walk cannot see. A bare prefix test would call `repo-old` inside
+`repo`; Mains wrote that one down and there was no reason to learn it twice.
+
+**Tack shows you files. It does not run programs.** On Windows what "open" means is decided by the
+extension, and for a great many of them it means *execute*. Checked with `ftype` on this machine
+rather than assumed:
+
+```
+JSFile  = C:\Windows\System32\WScript.exe "%1" %*
+batfile = "%1" %*
+```
+
+So `tack open tack.js` handed to the shell would **run** `tack.js` under Windows Script Host — in
+a tree that is mostly `.js`. Those are readable, so Tack opens them in an editor and says why;
+refusing outright would make the back door useless for the infrastructure it exists to reach.
+Things that are not documents at all — `.exe`, `.msi`, `.lnk` — print their path and stop.
+
+**The one allowlist that is deliberately a denylist**, and the asymmetry is the reason. For git
+verbs the dangerous set is unbounded and the safe set is tiny, so `write.js` and `undo.js` name
+what is permitted. Here it is the other way round: the dangerous set is small, closed and
+well-known, while the safe set is every document format that exists. An allowlist would be a list
+that is permanently missing something Trevor wanted to look at.
+
+### Ambiguity is reported, the same as everywhere else
+
+`tack open marquee` finds `marquee.html`, `marquee.js` and `marquee.cmd`, and lists all three.
+Opening the wrong file is quieter than opening the wrong game and just as wrong.
+
+The one thing it does that Marquee will not: `tack open salient_job1` reaches the *predecessor*
+build. Marquee hides it on purpose, because a launcher offering a discarded draft as though it
+were the game is its worst failure. A back door for looking at things has the opposite job.
+
 ## The live gate, and why it is a warning rather than a block
 
 **Built twice, wrong twice, removed.** Worth writing down because the reasoning generalises.
@@ -216,11 +280,12 @@ Tack/
   write.js           the only file that can write. Its own allowlist and guards
   sit.js             the pane -- drawing and keys. Pure enough to test without a terminal
   undo.js            the only file that can destroy work. One verb, and the attic
+  open.js            the back door -- find a file, refuse to run it, hand it over
   roots.json         the only hand-written list: roots, never repos
   tack.cmd           the shim, so it is one word instead of a path
   Look.bat           double-click: the glance
   Sit.bat            double-click: the pane
-  tools/selftest.js  293 assertions + 63 mutants across all four files
+  tools/selftest.js  361 assertions + 78 mutants across all five files
 ```
 
 The split is the security model, not tidiness. `tack.js` runs on every glance and has no
@@ -387,6 +452,11 @@ it. **Tack** is Trevor's pick out of a shortlist.
 
 Pass 2b -- `undo.js`, the attic, the typed confirmation -- 24 Aug 2026, after Tack had been in
 daily use for four days and had committed its own two previous passes.
+
+The back door -- `open.js`, `tack open` -- the same day. Trevor asked for it, I argued it belonged
+in Marquee and built it there, and he came back with the case that changed my mind: it is an admin
+route for when Marquee is the thing under inspection, not a second launcher. Both exist now and
+they do different jobs.
 
 Two calls of Trevor's that improved the design and are worth attributing: **blocking the whole Pet
 folder** rather than `log.js` by name, which removes a judgement call from a guard that should not

@@ -74,7 +74,7 @@ function rawGit(dir, args) {
 
 /* ------------------------------------------------------------------- suite */
 
-function suite(TK, W, SIT, U) {
+function suite(TK, W, SIT, U, O) {
 
   section('the read-only guarantee');
 
@@ -633,6 +633,173 @@ function suite(TK, W, SIT, U) {
   eq(back.key('q'), true, 'but q inside a repo goes back rather than quitting');
   eq(back.view, 'repos', 'and lands on the repo list');
 
+  /* =================================================================== open */
+
+  section('Tack shows files; it does not run programs');
+
+  /* The headline hazard, checked with `ftype` on this machine rather than
+   * assumed: .js is bound to WScript.exe, so handing tack.js to the shell
+   * would EXECUTE it -- in a tree that is mostly .js. */
+  ok(O.RUNS_BUT_READABLE.indexOf('.js') !== -1,
+     '.js is known to be something Windows runs');
+  ['.bat', '.cmd', '.ps1', '.vbs', '.hta', '.reg'].forEach(function (e) {
+    ok(O.RUNS_BUT_READABLE.indexOf(e) !== -1, e + ' too');
+  });
+  ['.exe', '.com', '.msi', '.scr', '.lnk', '.cpl'].forEach(function (e) {
+    ok(O.NEVER_OPENED.indexOf(e) !== -1, e + ' is never opened at all');
+  });
+  eq(O.RUNS_BUT_READABLE.filter(function (e) {
+       return O.NEVER_OPENED.indexOf(e) !== -1; }), [],
+     'no extension is on both lists');
+
+  eq(O.kindOf('C:/x/tack.js'), 'script', 'a .js is a script, not a document');
+  eq(O.kindOf('C:/x/TACK.JS'), 'script', 'and case does not smuggle one past');
+  eq(O.kindOf('C:/x/Power On.bat'), 'script', 'a .bat is a script');
+  eq(O.kindOf('C:/x/thing.exe'), 'program', 'an .exe is a program');
+  eq(O.kindOf('C:/x/marquee.html'), 'document', 'an .html is a document');
+  eq(O.kindOf('C:/x/CLAUDE.md'), 'document', 'so is a .md');
+  eq(O.kindOf('C:/x/noextension'), 'document', 'and so is a file with no extension');
+
+  section('nothing outside the swept repos is reachable');
+
+  var box = tmp('openbox');
+  var inside = tmp('openbox/repo');
+  fs.mkdirSync(path.join(inside, '.git'));
+  fs.writeFileSync(path.join(inside, 'a.html'), '<h1>a</h1>');
+  fs.writeFileSync(path.join(inside, 'notes.md'), '# notes');
+  fs.mkdirSync(path.join(inside, 'deep', 'deeper'), { recursive: true });
+  fs.writeFileSync(path.join(inside, 'deep', 'deeper', 'buried.html'), 'x');
+  fs.mkdirSync(path.join(inside, 'node_modules', 'junk'), { recursive: true });
+  fs.writeFileSync(path.join(inside, 'node_modules', 'junk', 'a.html'), 'no');
+  fs.writeFileSync(path.join(box, 'outside.html'), 'not in any repo');
+
+  ok(O.isInside(path.join(inside, 'a.html'), [inside]), 'a file in a repo is inside it');
+  ok(!O.isInside(path.join(box, 'outside.html'), [inside]),
+     'a file next to the repo is not');
+
+  /* A prefix test on the string would say `repo-old` is inside `repo`. Mains
+   * wrote this one down; no reason to learn it twice. */
+  var sibling = tmp('openbox/repo-old');
+  fs.writeFileSync(path.join(sibling, 'decoy.html'), 'x');
+  ok(!O.isInside(path.join(sibling, 'decoy.html'), [inside]),
+     'and neither is a sibling whose name merely starts the same way');
+
+  section('walking a repo');
+
+  var walked = O.walk(inside, ['.git', 'node_modules'], 6);
+  var names = walked.map(function (f) { return f.name; }).sort();
+  ok(names.indexOf('a.html') !== -1, 'a top-level file is found');
+  ok(names.indexOf('buried.html') !== -1, 'and a deep one');
+  eq(walked.filter(function (f) { return /node_modules/.test(f.rel); }), [],
+     'the skip list is honoured');
+  eq(O.walk(inside, ['.git', 'node_modules'], 1)
+      .filter(function (f) { return f.name === 'buried.html'; }), [],
+     'and the depth cap is real');
+
+  section('matching a file by part of its name');
+
+  var FILES = [
+    { name: 'marquee.html', rel: 'marquee.html', repo: 'Claude Town/Marquee', file: 'X/marquee.html' },
+    { name: 'marquee.js',   rel: 'marquee.js',   repo: 'Claude Town/Marquee', file: 'X/marquee.js' },
+    { name: 'marquee.cmd',  rel: 'marquee.cmd',  repo: 'Claude Town/Marquee', file: 'X/marquee.cmd' },
+    { name: 'panel.html',   rel: 'panel.html',   repo: 'Claude Town/Mains',   file: 'X/panel.html' },
+    { name: 'salient.html', rel: 'Salient/salient.html', repo: 'Games', file: 'X/salient.html' },
+    { name: 'salient_job1.html', rel: 'Salient/salient_job1.html', repo: 'Games', file: 'X/sj.html' }
+  ];
+
+  eq(O.match('marquee.html', FILES).hits.length, 1, 'a full filename resolves to one');
+  eq(O.match('marquee.html', FILES).tier, 'filename', 'reported as a filename match');
+  eq(O.match('MARQUEE.HTML', FILES).hits.length, 1, 'case does not matter');
+  eq(O.match('panel', FILES).hits.length, 1, 'a stem resolves when it is unique');
+
+  var many = O.match('marquee', FILES);
+  eq(many.hits.length, 3, 'a stem shared by three files matches all three');
+  eq(many.tier, 'stem', 'at the stem tier');
+
+  /* Marquee deliberately hides predecessors; the back door deliberately does
+   * not. `salient` is the shipped one and `salient_job1` is reachable by name,
+   * which is the entire reason this verb exists. */
+  eq(O.match('salient', FILES).hits.length, 1, 'a stem beats a longer name sharing it');
+  eq(O.match('salient', FILES).hits[0].name, 'salient.html', 'and picks the exact stem');
+  eq(O.match('salient_job1', FILES).hits[0].name, 'salient_job1.html',
+     'while the predecessor is still reachable by its own name');
+
+  eq(O.match('Salient/', FILES).hits.length, 2, 'a path fragment matches what is under it');
+  eq(O.match('', FILES).hits.length, 0, 'an empty query matches nothing');
+  eq(O.match('nothing-like-this', FILES).hits.length, 0, 'and a miss is a miss');
+
+  section('a bare repo name opens the folder');
+
+  var fakeState = { repos: [{ dir: 'C:/x/Games', label: 'Games' },
+                            { dir: 'C:/x/Misc Tools', label: 'Misc Tools' }] };
+  eq(O.matchRepo('games', fakeState).length, 1, 'a repo label matches its repo');
+  eq(O.matchRepo('Misc Tools', fakeState).length, 1, 'including one with a space');
+  eq(O.matchRepo('marquee', fakeState).length, 0, 'and a filename does not');
+
+  section('what open prints, and what it launches');
+
+  /* The launch is counted rather than trusted. --dry must open NOTHING, and a
+   * program must be refused rather than run. */
+  var launched = [];
+  var realLaunch = O.launch;
+  O.launch = function (f, k) { launched.push([f, k]); };
+
+  var one = TK.renderOpen('marquee.html',
+    { tier: 'filename', hits: [FILES[0]] }, [], { dry: true });
+  ok(one.lines.join('\n').indexOf('would open') !== -1, '--dry says "would open"');
+  eq(launched.length, 0, 'and launches nothing at all');
+  eq(one.code, 0, 'and succeeds');
+
+  TK.renderOpen('marquee.html', { tier: 'filename', hits: [FILES[0]] }, [], {});
+  eq(launched.length, 1, 'without --dry it launches');
+  eq(launched[0][1], 'document', 'an .html goes to the shell as a document');
+
+  launched.length = 0;
+  var script = TK.renderOpen('tack.js',
+    { tier: 'filename', hits: [{ name: 'tack.js', rel: 'tack.js', repo: 'T', file: 'X/tack.js' }] }, [], {});
+  eq(launched[0][1], 'script', 'a .js is launched as a script, never as a document');
+  ok(/would RUN this/.test(script.lines.join('\n')), 'and the readout says why');
+  ok(script.lines.join('\n').indexOf(O.editor()) !== -1, 'and names the editor');
+
+  launched.length = 0;
+  var prog = TK.renderOpen('thing.exe',
+    { tier: 'filename', hits: [{ name: 'thing.exe', rel: 'thing.exe', repo: 'T', file: 'X/thing.exe' }] }, [], {});
+  eq(launched.length, 0, 'a program is never launched');
+  eq(prog.code, 1, 'and it is an error');
+  ok(/does not run them/.test(prog.lines.join('\n')), 'and says so plainly');
+
+  launched.length = 0;
+  var amb = TK.renderOpen('marquee', { tier: 'stem', hits: FILES.slice(0, 3) }, [], {});
+  eq(launched.length, 0, 'an ambiguous match launches nothing');
+  eq(amb.code, 1, 'and is an error');
+  ok(/does not guess/.test(amb.lines.join('\n')), 'and refuses to choose');
+  ok(amb.lines.join('\n').indexOf('marquee.cmd') !== -1, 'listing every candidate');
+
+  launched.length = 0;
+  var none = TK.renderOpen('zzz', { tier: null, hits: [] }, [], {});
+  eq(launched.length, 0, 'a miss launches nothing');
+  eq(none.code, 1, 'and is an error');
+
+  launched.length = 0;
+  var folder = TK.renderOpen('games', { tier: null, hits: [] },
+                             [{ dir: 'C:/x/Games', label: 'Games' }], {});
+  eq(launched.length, 1, 'a repo name launches its folder');
+  eq(launched[0][0], 'C:/x/Games', 'the folder itself');
+  eq(folder.code, 0, 'and succeeds');
+
+  O.launch = realLaunch;
+
+  section('the back door does not need git');
+
+  /* It resolves where the repos are from the filesystem, not from git, so it
+   * still opens things when git is the thing that is broken. */
+  var where = TK.sweepPaths(path.join(ROOT, 'roots.json'));
+  ok(where.repos.length > 0, 'repo paths resolve without a sweep');
+  ok(where.repos.every(function (r) { return r.dir && r.label; }),
+     'each with a directory and a label');
+  ok(where.repos.every(function (r) { return !('branch' in r) || r.branch == null; }),
+     'and no git state was gathered');
+
   /* =================================================================== undo */
 
   section('what undo.js may do');
@@ -1139,13 +1306,81 @@ var MUTANTS_SIT2 = [
    "var CONFIRM_WORD = 'y';"]
 ].map(function (m) { return { file: 'sit.js', name: m[0], from: m[1], to: m[2] }; });
 
-MUTANTS = MUTANTS.concat(MUTANTS_WRITE, MUTANTS_SIT, MUTANTS_UNDO, MUTANTS_SIT2);
+/* The back door. Its two rules are "nothing outside the sweep" and "shows
+ * files, does not run programs", and every mutant here removes one of them. */
+var MUTANTS_OPEN = [
+  ['.js stops being treated as something Windows runs',
+   "var RUNS_BUT_READABLE = ['.js', '.jse',",
+   "var RUNS_BUT_READABLE = ['.jse',"],
+
+  ['nothing is treated as a script, so everything goes to the shell',
+   '  if (RUNS_BUT_READABLE.indexOf(ext) !== -1) return \'script\';',
+   '  if (false) return \'script\';'],
+
+  ['programs stop being refused',
+   '  if (NEVER_OPENED.indexOf(ext) !== -1)     return \'program\';',
+   '  if (false)     return \'program\';'],
+
+  ['the extension check becomes case-sensitive',
+   "  var ext = (String(file).match(/\\.[^.\\\\/]+$/) || [''])[0].toLowerCase();",
+   "  var ext = (String(file).match(/\\.[^.\\\\/]+$/) || [''])[0];"],
+
+  ['containment is a bare prefix test, so a sibling repo counts as inside',
+   "    return real.toLowerCase().indexOf(r.toLowerCase() + path.sep) === 0;",
+   "    return real.toLowerCase().indexOf(r.toLowerCase()) === 0;"],
+
+  ['containment is not checked at all',
+   "  return roots.some(function (root) {",
+   "  return true || roots.some(function (root) {"],
+
+  ['the skip list is ignored while walking',
+   '        if (skip.indexOf(e.name) !== -1) continue;',
+   '        if (false) continue;'],
+
+  ['the depth cap is removed',
+   '        if (level < depth) step(path.join(dir, e.name), rel + e.name + \'/\', level + 1);',
+   '        step(path.join(dir, e.name), rel + e.name + \'/\', level + 1);'],
+
+  ['an ambiguous match is resolved by taking the first file',
+   '    if (hits.length) return { tier: TIERS[t][0], hits: hits };',
+   '    if (hits.length) return { tier: TIERS[t][0], hits: hits.slice(0, 1) };'],
+
+  ['an empty query matches every file in the tree',
+   '  if (!q) return { tier: null, hits: [] };',
+   '  if (!q) return { tier: null, hits: files };'],
+
+  ['a script is handed to the shell instead of the editor',
+   "  if (kind === 'script') {\n    /* Opened to READ. Handing it to the shell would run it. */",
+   "  if (false) {\n    /* Opened to READ. Handing it to the shell would run it. */"]
+].map(function (m) { return { file: 'open.js', name: m[0], from: m[1], to: m[2] }; });
+
+var MUTANTS_TACK2 = [
+  ['--dry opens the file anyway',
+   '  if (!dry) O.launch(hit.file, kind);',
+   '  O.launch(hit.file, kind);'],
+
+  ['a program is launched rather than refused',
+   "  if (kind === 'program') {",
+   "  if (false) {"],
+
+  ['an ambiguous list is opened rather than printed',
+   '  if (res.hits.length > 1) {',
+   '  if (false) {'],
+
+  ['sweepPaths gathers git state after all',
+   '      return { dir: d, label: labelFor(d), error: null };',
+   '      return readRepo(d, Date.now());']
+].map(function (m) { return { file: 'tack.js', name: m[0], from: m[1], to: m[2] }; });
+
+MUTANTS = MUTANTS.concat(MUTANTS_WRITE, MUTANTS_SIT, MUTANTS_UNDO, MUTANTS_SIT2,
+                         MUTANTS_OPEN, MUTANTS_TACK2);
 
 var SOURCES = {
   'tack.js':  fs.readFileSync(path.join(ROOT, 'tack.js'),  'utf8'),
   'write.js': fs.readFileSync(path.join(ROOT, 'write.js'), 'utf8'),
   'sit.js':   fs.readFileSync(path.join(ROOT, 'sit.js'),   'utf8'),
-  'undo.js':  fs.readFileSync(path.join(ROOT, 'undo.js'),  'utf8')
+  'undo.js':  fs.readFileSync(path.join(ROOT, 'undo.js'),  'utf8'),
+  'open.js':  fs.readFileSync(path.join(ROOT, 'open.js'),  'utf8')
 };
 
 function runMutants() {
@@ -1175,13 +1410,14 @@ function runMutants() {
     try {
       delete require.cache[require.resolve(file)];
       var mutated = require(file);
-      var mods = { TK: TK, W: W, SIT: SIT, U: U };
+      var mods = { TK: TK, W: W, SIT: SIT, U: U, O: O };
       if (m.file === 'tack.js')  mods.TK  = mutated;
       if (m.file === 'write.js') mods.W   = mutated;
       if (m.file === 'sit.js')   mods.SIT = mutated;
       if (m.file === 'undo.js')  mods.U   = mutated;
+      if (m.file === 'open.js')  mods.O   = mutated;
       var hush = console.log; console.log = function () {};
-      try { suite(mods.TK, mods.W, mods.SIT, mods.U); } finally { console.log = hush; }
+      try { suite(mods.TK, mods.W, mods.SIT, mods.U, mods.O); } finally { console.log = hush; }
       died = fail > before.fail;
     } catch (e) {
       died = true; /* a mutant that crashes the suite is caught, loudly */
@@ -1216,8 +1452,9 @@ var TK  = require(SOURCE);
 var W   = require(path.join(ROOT, 'write.js'));
 var SIT = require(path.join(ROOT, 'sit.js'));
 var U   = require(path.join(ROOT, 'undo.js'));
+var O   = require(path.join(ROOT, 'open.js'));
 TK.C.on = false;
-suite(TK, W, SIT, U);
+suite(TK, W, SIT, U, O);
 
 var mut = { escaped: [], skipped: [] };
 if (!NO_MUT) mut = runMutants();

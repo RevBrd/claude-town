@@ -252,6 +252,23 @@ function sweep(cfgFile, now) {
   };
 }
 
+/* The repo list without asking git anything. `tack open` needs to know WHERE
+ * the repos are, not what state they are in, and three git calls per repo is
+ * over a second of waiting for an answer the filesystem already had.
+ *
+ * It also means the back door still opens when git is the thing that is
+ * broken -- missing from PATH, a corrupt index, a lock left behind by a killed
+ * process. A door that only works while the house is fine is not a back door. */
+function sweepPaths(cfgFile) {
+  var disc = discover(loadRoots(cfgFile));
+  return {
+    repos: disc.repos.map(function (d) {
+      return { dir: d, label: labelFor(d), error: null };
+    }),
+    missingRoots: disc.missingRoots
+  };
+}
+
 function rank(r) {
   if (r.error)   return 0;
   if (r.loose)   return 0;
@@ -530,6 +547,77 @@ function renderFaces() {
   return L.map(trimEnd);
 }
 
+/* ------------------------------------------------------------- the back door */
+
+/* `tack open <thing>`. Marquee opens works; this opens files, and it exists so
+ * that something can still open Marquee when Marquee is the thing being taken
+ * apart. Rendering is here; the finding, the containment check and the
+ * launching are in open.js. */
+function renderOpen(query, res, repos, opts) {
+  var O = require('./open.js');
+  var L = [''], dry = opts && opts.dry;
+
+  if (repos && repos.length === 1) {
+    var r = repos[0];
+    L.push('  ' + C.good(dry ? 'would open' : 'opening') + '  ' +
+           C.body(r.label) + C.dim('   the folder'));
+    L.push('  ' + C.dim(r.dir));
+    L.push('');
+    if (!dry) O.launch(r.dir, 'document');
+    return { lines: L.map(trimEnd), code: 0 };
+  }
+
+  if (!res.hits.length) {
+    L.push('  ' + C.alert('no file matching "' + query + '"'));
+    L.push('  ' + C.dim('Tack looks inside the repos it sweeps, no further.'));
+    L.push('');
+    return { lines: L.map(trimEnd), code: 1 };
+  }
+
+  if (res.hits.length > 1) {
+    L.push('  ' + C.warm(res.hits.length + ' files match "' + query + '"') +
+           C.dim('  (' + res.tier + ')'));
+    L.push('');
+    res.hits.slice(0, O.TUNE.MAX_HITS).forEach(function (f) {
+      L.push('    ' + C.body(pad(clip(f.name, 30), 31)) +
+             C.dim(f.repo + '/' + f.rel.replace(/[^\/]+$/, '')));
+    });
+    if (res.hits.length > O.TUNE.MAX_HITS) {
+      L.push('    ' + C.dim('and ' + (res.hits.length - O.TUNE.MAX_HITS) + ' more'));
+    }
+    L.push('');
+    L.push('  ' + C.dim('say which one. Tack does not guess between them.'));
+    L.push('');
+    return { lines: L.map(trimEnd), code: 1 };
+  }
+
+  var hit = res.hits[0];
+  var kind = O.kindOf(hit.file);
+
+  if (kind === 'program') {
+    L.push('  ' + C.alert('that is a program, not a document'));
+    L.push('  ' + C.dim(hit.file));
+    L.push('');
+    L.push('  ' + C.dim('Tack shows you files. It does not run them — opening this'));
+    L.push('  ' + C.dim('would mean executing it. Run it yourself if you meant to.'));
+    L.push('');
+    return { lines: L.map(trimEnd), code: 1 };
+  }
+
+  L.push('  ' + C.good(dry ? 'would open' : 'opening') + '  ' +
+         C.body(hit.name) + C.dim('   (matched on ' + res.tier + ')'));
+  L.push('  ' + C.dim(hit.file));
+  if (kind === 'script') {
+    L.push('');
+    L.push('  ' + C.live('opened in ' + O.editor() + ' to read.') +
+           C.dim(' Windows would RUN this'));
+    L.push('  ' + C.dim('one rather than show it, so Tack does not hand it to the shell.'));
+  }
+  L.push('');
+  if (!dry) O.launch(hit.file, kind);
+  return { lines: L.map(trimEnd), code: 0 };
+}
+
 /* ------------------------------------------------------------------ attic */
 
 /* Everything Tack has ever thrown away on your behalf. Nothing here is ever
@@ -580,10 +668,12 @@ var HELP = [
   '  tack one        a single line, for a status bar',
   '  tack faces      every shape of him, in every mood',
   '  tack attic      everything Tack has ever thrown away, and where it is',
+  '  tack open NAME  open a file, or a repo folder, from anywhere in the sweep',
   '  tack --json     the same sweep as data',
   '',
   '  --no-color      plain text',
   '  --shape=NAME    plain | bat | batlite | ascii  (see `tack faces`)',
+  '  --dry           with open: say what it would open, and do not open it',
   '',
   '  Tack stages only paths it has shown you -- `git add -A` is not a thing',
   '  it declines, it is a thing it cannot express. Discarding a change always',
@@ -596,6 +686,7 @@ function main(argv) {
   var args = argv.slice(2);
   if (args.indexOf('--no-color') !== -1 || process.env.NO_COLOR ||
       !process.stdout.isTTY) C.on = false;
+  var dryRun = args.indexOf('--dry') !== -1;
   if (args.indexOf('--ascii') !== -1 || process.env.TACK_ASCII) T.SHAPE = 'ascii';
   args.forEach(function (a) {
     var m = a.match(/^--shape=(.+)$/);
@@ -604,7 +695,8 @@ function main(argv) {
                                      Object.keys(SHAPES).join(', ') + '\n');
   });
   args = args.filter(function (a) {
-    return a !== '--no-color' && a !== '--ascii' && !/^--shape=/.test(a); });
+    return a !== '--no-color' && a !== '--ascii' && a !== '--dry' &&
+           !/^--shape=/.test(a); });
 
   if (args[0] === '--help' || args[0] === '-h' || args[0] === 'help') {
     process.stdout.write(HELP + '\n'); return 0;
@@ -622,6 +714,29 @@ function main(argv) {
   }
 
   var cfgFile = path.join(__dirname, 'roots.json');
+
+  /* Above the sweep on purpose. `open` needs to know WHERE the repos are, not
+   * what state they are in, so it skips three git calls per repo -- and keeps
+   * working when git is the thing that is broken. */
+  if (args[0] === 'open') {
+    var q = args.slice(1).join(' ');
+    if (!q) { process.stdout.write('\n  tack open needs something to open.\n' + HELP + '\n'); return 1; }
+    var O = require('./open.js');
+    var where = sweepPaths(cfgFile);
+    var repos = O.matchRepo(q, where);
+    var res = repos.length === 1 ? { tier: null, hits: [] }
+                                 : O.match(q, O.catalogue(where));
+    /* Containment is checked on the RESULT of resolution, never assumed from
+     * where the walk found it -- a junction pointing out of a repo is exactly
+     * the case a directory walk cannot see. Mains wrote this down; no reason
+     * to learn it twice. */
+    var roots = where.repos.map(function (r) { return r.dir; });
+    res.hits = res.hits.filter(function (f) { return O.isInside(f.file, roots); });
+    var out = renderOpen(q, res, repos, { dry: dryRun });
+    process.stdout.write(out.lines.join('\n') + '\n');
+    return out.code;
+  }
+
   var s;
   try { s = sweep(cfgFile, Date.now()); }
   catch (e) {
@@ -633,6 +748,7 @@ function main(argv) {
     process.stdout.write(JSON.stringify(s, null, 2) + '\n'); return 0;
   }
   if (args[0] === 'one') { process.stdout.write(renderOne(s) + '\n'); return 0; }
+
   if (args[0] === 'sit') {
     /* Required lazily so the glance never loads the file that can write. */
     return require('./sit.js').run(cfgFile, args.slice(1).join(' ') || null);
@@ -659,8 +775,8 @@ module.exports = {
   T: T, READ_ONLY_VERBS: READ_ONLY_VERBS, git: git,
   parseStatusV2: parseStatusV2, describe: describe, findRepos: findRepos,
   discover: discover, loadRoots: loadRoots, expandHome: expandHome,
-  labelFor: labelFor, readRepo: readRepo, sweep: sweep, rank: rank,
-  render: render, renderShow: renderShow, renderAttic: renderAttic, expandMatches: expandMatches, trimEnd: trimEnd, renderOne: renderOne, previewOf: previewOf,
+  labelFor: labelFor, readRepo: readRepo, sweep: sweep, sweepPaths: sweepPaths, rank: rank,
+  render: render, renderShow: renderShow, renderAttic: renderAttic, renderOpen: renderOpen, expandMatches: expandMatches, trimEnd: trimEnd, renderOne: renderOne, previewOf: previewOf,
   creature: creature, headBlock: headBlock, SHAPES: SHAPES, renderFaces: renderFaces,
   moodOf: moodOf, ago: ago, visLen: visLen, padVis: padVis, C: C,
   main: main
