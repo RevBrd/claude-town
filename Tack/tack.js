@@ -27,7 +27,7 @@ var T = {
   LABEL_MAX:      24,   // repo name column
   PREVIEW_MAX:    32,   // filename column
   SCAN_TIMEOUT:  8000,  // ms per git call
-  SHAPE:       'plain'  // which creature: plain | bat | batlite | ascii. `tack faces` shows them
+  SHAPE:       'bat'  // which creature: plain | bat | batlite | ascii. `tack faces` shows them
 };
 
 /* The whole of pass 1's authority over your machine. To widen this you have to
