@@ -27,6 +27,8 @@ deliberate. One line decides which kind a new thing is:
 > **A critter is earned by a tool that has a state you would otherwise have to go and ask for.
 > Everything else is a place.**
 
+Shim does not live here (except in canon) but it is maintained from here. 
+
 Shim has a state — mood, size, what it has eaten. Tack has one — what it just found across ten
 repos. That state is what the eyes are *for*, and it is why neither of them is decoration: the
 face is a readout that happens to be a face.
@@ -85,9 +87,6 @@ a different miscellaneous task". This bar only applies to the main document. Log
 The full project tree (`C:\Users\fonte\Projects\`) and the global Claude context
 (`C:\Users\fonte\.claude\`) are continuously synced to Google Drive via Google Drive for
 Desktop. No manual steps required — it runs in the background. Set up August 2026.
-
-
-
 
 
 
