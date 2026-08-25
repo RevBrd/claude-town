@@ -9,3 +9,7 @@
 # Tracked here so a crashed run cannot leave one in a commit.
 .smoke-tmp.html
 .agree-tmp.html
+
+# Electron shell (step 1). Big and rebuildable; not part of the deliverable.
+node_modules/
+dist/

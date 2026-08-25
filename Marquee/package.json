@@ -1,0 +1,12 @@
+{
+  "name": "marquee",
+  "version": "0.1.0",
+  "description": "The front door to the Claude Town tree.",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^43.4.1"
+  }
+}
