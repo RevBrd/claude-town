@@ -135,6 +135,13 @@ marquee find sand    # what matches, without opening anything
 
 The folder is on the user PATH as of 24 Aug 2026, so `marquee` works from any directory.
 
+**`marquee marquee` opens the building itself**, and since 25 Aug 2026 that means the Electron
+shell when one is installed and `marquee.html` on batteries when it is not — **and it says
+which**. Two ways in that look identical from the outside is exactly what this project reports
+rather than hides; the page already prints which power source its catalog came from, for the
+same reason. No new verb was needed: the building was already a builtin entry, so anything that
+matches it — `marquee marquee`, `marquee building` by title — now opens the real window.
+
 **It is a third reader of `derive.js`, never a third catalog.** The page reads the derivation, the
 live path re-runs it in the browser, and this runs it under node — one answer to "what is in this
 building". A launcher with its own list is the exact thing the whole project exists to avoid, and
@@ -220,6 +227,31 @@ node tools/shell.js
 `--json` dumps the manifest to stdout, `--games <path>` points at a different tree, `--strict`
 makes drift a non-zero exit (by default only genuinely broken things fail, since drift is a
 normal state and an always-red exit code is noise).
+
+## A mutation suite can lose coverage without going red
+
+Found 25 Aug 2026 and fixed in all three harnesses here and in Tack's, because it is the same
+bug four times.
+
+**`git checkout` of a source file rewrites its line endings to CRLF on this machine**, and every
+mutant whose anchor spans two lines then matches nothing. Those are reported `SKIP` — correctly,
+since a mutant that cannot be applied has not been caught — but the suite **does not fail**. It
+just quietly runs fewer mutants, at exactly the moment somebody has restored a file and most
+wants to know the coverage is real.
+
+Measured rather than reasoned about, on both projects:
+
+- `frontdoor.js` went from **9 mutants to 7** the moment `marquee.js` was checked out.
+- Tack's suite, run against a CRLF `tack.js` with the fix removed, reported
+  **`101/101 applicable mutants caught, 500 passed, 0 failed`** — while silently skipping seven.
+
+So every harness now normalises the source it mutates to LF before matching. Tack's suite had
+already learned this for the file *contents* it compares — *"compare content, not line-ending
+policy"* — and had missed that the same is true of the source it mutates.
+
+**The general form: when a suite can degrade instead of failing, the degradation needs its own
+assertion.** `SKIP` was already visible in the output and had been reported honestly for weeks.
+Nobody was reading it.
 
 ## The declaration
 

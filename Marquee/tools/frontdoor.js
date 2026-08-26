@@ -310,7 +310,12 @@ M.C.on = false;
 assertions(M);
 
 let mut = { escaped: [], skipped: [] };
-if (!NO_MUT) mut = runMutants(fs.readFileSync(SRC, 'utf8'));
+// LF, always. git's core.autocrlf hands this file back with CRLF after any
+// checkout on Windows, and a mutant whose anchor spans two lines then matches
+// nothing and is reported SKIP -- so the suite quietly loses coverage at the
+// moment somebody restores a file, which is exactly when they want it.
+// Attested here: a `git checkout` of marquee.js dropped 9 mutants to 7.
+if (!NO_MUT) mut = runMutants(fs.readFileSync(SRC, 'utf8').replace(/\r\n/g, '\n'));
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 if (fail) { console.log('\nfailures:'); failures.forEach(f => console.log('  - ' + f)); }

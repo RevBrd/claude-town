@@ -1847,12 +1847,28 @@ MUTANTS = MUTANTS.concat(MUTANTS_WRITE, MUTANTS_SIT, MUTANTS_UNDO, MUTANTS_SIT2,
                          MUTANTS_OPEN, MUTANTS_TACK2, MUTANTS_LOG, MUTANTS_SITLOG,
                          MUTANTS_AGO);
 
+/* LF, always. The suite already normalises line endings when it compares a
+ * restored FILE's contents -- git's core.autocrlf rewrites them on checkout, so
+ * comparing raw would test a git setting rather than anything Tack does. The
+ * same is true of the SOURCE this suite mutates and it was missed: after any
+ * checkout on Windows these come back CRLF, every mutant whose anchor spans two
+ * lines stops matching, and each one is reported SKIP.
+ *
+ * That is the worst shape of failure available here. The suite does not go red;
+ * it quietly runs fewer mutants, at exactly the moment somebody has restored a
+ * file and most wants to know the coverage is real. Found in Marquee, where a
+ * `git checkout` of marquee.js took its front-door suite from 9 mutants to 7
+ * without a single failure. */
+function source(name) {
+  return fs.readFileSync(path.join(ROOT, name), 'utf8').replace(/\r\n/g, '\n');
+}
+
 var SOURCES = {
-  'tack.js':  fs.readFileSync(path.join(ROOT, 'tack.js'),  'utf8'),
-  'write.js': fs.readFileSync(path.join(ROOT, 'write.js'), 'utf8'),
-  'sit.js':   fs.readFileSync(path.join(ROOT, 'sit.js'),   'utf8'),
-  'undo.js':  fs.readFileSync(path.join(ROOT, 'undo.js'),  'utf8'),
-  'open.js':  fs.readFileSync(path.join(ROOT, 'open.js'),  'utf8')
+  'tack.js':  source('tack.js'),
+  'write.js': source('write.js'),
+  'sit.js':   source('sit.js'),
+  'undo.js':  source('undo.js'),
+  'open.js':  source('open.js')
 };
 
 function runMutants() {

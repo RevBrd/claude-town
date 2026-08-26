@@ -375,7 +375,11 @@ const MUTANTS = [
 ];
 
 function runMutant(mutant, root, tmpDir) {
-  const src = fs.readFileSync(DERIVE_SRC, 'utf8');
+  // LF, always -- git hands this back with CRLF after any checkout on Windows,
+  // and a multi-line anchor then matches nothing and is reported as unapplied.
+  // A suite that loses mutants when somebody restores a file is lying about its
+  // own coverage at the worst possible moment. See frontdoor.js, same fix.
+  const src = fs.readFileSync(DERIVE_SRC, 'utf8').replace(/\r\n/g, '\n');
   if (!src.includes(mutant.find)) {
     return { applied: false, note: 'anchor text not found — derive.js changed, update the mutant' };
   }

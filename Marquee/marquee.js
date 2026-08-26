@@ -19,6 +19,7 @@
 'use strict';
 
 var path = require('path');
+var fs   = require('fs');
 var cp   = require('child_process');
 var D    = require('./tools/derive.js');
 
@@ -158,6 +159,24 @@ function open(file) {
   child.unref();
 }
 
+/* The Electron shell, if somebody has run `npm install` here. Looked up on disk
+ * every time rather than remembered anywhere, for the same reason the catalog is
+ * derived every run: a recorded answer to "is the shell installed" would be
+ * wrong the first time anybody deleted node_modules, and it would be wrong
+ * quietly. A missing file here is not an error, it is batteries mode. */
+function shellExe() {
+  /* Windows only, like Marquee.bat, and deliberately so — this tree is one
+   * machine and pretending otherwise would be untested code. */
+  var exe = path.join(HERE, 'node_modules', 'electron', 'dist', 'electron.exe');
+  try { return fs.existsSync(exe) ? exe : null; } catch (e) { return null; }
+}
+
+function openShell(exe) {
+  var child = cp.spawn(exe, [HERE],
+                       { cwd: HERE, detached: true, stdio: 'ignore', windowsHide: true });
+  child.unref();
+}
+
 /* ---------------------------------------------------------------- drawing */
 
 var C = {
@@ -278,6 +297,21 @@ function main(argv) {
 
   var w = res.hits[0];
 
+  /* The building itself opens in the shell when there is one, and on batteries
+   * when there is not -- and it SAYS WHICH. Two ways in that look identical
+   * from the outside is exactly the kind of thing this project reports rather
+   * than hides; the page already prints which power source its catalog came
+   * from, for the same reason. */
+  if (w.builtin) {
+    var exe = shellExe();
+    process.stdout.write('\n  ' + C.good(dry ? 'would open' : 'opening') + '  ' +
+      C.body(w.display) + C.dim('   (matched on ' + res.tier + ')') + '\n' +
+      '  ' + C.dim(exe ? 'in its own window, through Electron'
+                       : 'on batteries — `npm install` here for the shell') + '\n\n');
+    if (!dry) { if (exe) openShell(exe); else open(w.file); }
+    return 0;
+  }
+
   if (w.entryStatus !== 'ok' || !w.file) {
     process.stdout.write('\n  ' + C.body(w.display) + C.dim(' cannot be opened') + '\n' +
       '  ' + C.dim(w.entryStatus === 'no-build'
@@ -297,6 +331,7 @@ function main(argv) {
 
 module.exports = { norm: norm, squash: squash, initials: initials, match: match,
                    works: works, builtins: builtins, renderList: renderList,
+                   shellExe: shellExe, openShell: openShell,
                    renderHits: renderHits, open: open, C: C, main: main };
 
 if (require.main === module) process.exit(main(process.argv));
