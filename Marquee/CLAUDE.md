@@ -467,7 +467,20 @@ the shell reports the catalog without knowing anything about it.
 **It cannot be navigated out of the collection.** There is no address bar, no reload and no tabs,
 so a top-level navigation anywhere else is a dead end with no way back. `will-navigate` allows
 only paths inside the venue roots, and `setWindowOpenHandler` sends `http(s)` to the real browser
-— where there *is* a back button — and denies everything else.
+— where there *is* a back button — and denies everything else. `file:`, `data:`, `javascript:`
+and `about:` open nothing and go nowhere.
+
+**Handing a link to the real browser is the one thing this process does that leaves the machine,
+and it is the one thing behind a seam.** Same reasoning as `derive.js`'s reads, one layer down.
+The suite has to assert that an http link goes to the browser *without a tab actually opening*,
+so it swaps `out.openExternal` for a recorder and checks what would have been handed over.
+
+That was learned the expensive way and is the third mistake this pass made. The first version of
+`tools/shell.js` called `window.open('https://example.com/')` against the real handler, so every
+run of the suite opened a tab in Trevor's browser — three runs, three tabs, and he was the one
+who noticed. **A suite with an effect outside the program it is testing is not a suite; it is a
+side effect with assertions attached.** The behaviour is still asserted. It is just no longer
+performed.
 
 **The allowed roots come from `venue.json`**, the same floor plan the derivation reads. A second
 copy of where the works live would drift, and the copy nobody reads is the one that goes stale. A
@@ -499,7 +512,7 @@ half-way through it. Two things worth knowing before starting:
   purely by everyone having picked distinct key names. It is fragile in principle and has not once
   been observed to collide.
 
-### Two things this pass got wrong, both worth keeping
+### Three things this pass got wrong, all worth keeping
 
 **`require.main === module` is not an Electron entry guard.** It was added so the suite could
 `require` the file without starting an app, it is false when Electron loads the entry, and for one
@@ -526,7 +539,7 @@ two clocks is nonsense in whichever direction it lands.
 node tools/shell.js
 ```
 
-36 pure assertions and 11 live ones. **One file, two runtimes**: run under node it asserts the
+43 pure assertions and 14 live ones. **One file, two runtimes**: run under node it asserts the
 pure decisions — what a key means, which roots are allowed, containment, file-url parsing — and
 then re-runs *itself* under Electron for the live half, which drives a real window. Two files
 would have had to agree about what they were testing, which is the same shape of problem as two

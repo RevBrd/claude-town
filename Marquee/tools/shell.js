@@ -90,6 +90,21 @@ function pureSuite() {
   eq(M.decide(K('a'), 1234, 1300, 700).lastEscape, 1234,
      'an unrelated key does not clear a pending Escape');
 
+  section('what a work may open');
+
+  /* Pure, so these cost nothing and open nothing. The live half then proves
+   * the handler is actually wired to this, against a recorder rather than
+   * against the real browser. */
+  eq(M.openPolicy('https://example.com/'), { action: 'deny', external: true },
+     'an https link is denied a window and handed to the real browser');
+  eq(M.openPolicy('http://example.com/'), { action: 'deny', external: true },
+     'and so is http');
+  ['file:///C:/Windows/win.ini', 'about:blank', 'data:text/html,x',
+   'javascript:alert(1)', ''].forEach(function (u) {
+    eq(M.openPolicy(u), { action: 'deny', external: false },
+       JSON.stringify(u) + ' is denied outright and goes nowhere');
+  });
+
   section('where the shell may go');
 
   var roots = M.allowedRoots(ROOT);
@@ -215,11 +230,29 @@ function liveSuite() {
     await wait(700);
     eq(await js('location.href'), here, 'a top-level navigation outside the roots is refused');
 
+    /* THE SEAM IS SWAPPED FOR A RECORDER FIRST. Against the real handler this
+     * assertion opened an example.com tab in Trevor's browser on every run,
+     * which is a test with an effect outside the thing it is testing. The
+     * behaviour is still asserted -- just not performed. */
+    var opened = [];
+    var realOpen = M.out.openExternal;
+    M.out.openExternal = function (u) { opened.push(u); return Promise.resolve(); };
+
     var windowsBefore = BrowserWindow.getAllWindows().length;
     await js("window.open('https://example.com/', '_blank')").catch(function () {});
     await wait(500);
     eq(BrowserWindow.getAllWindows().length, windowsBefore,
-       'and a work cannot open a chromeless window with no way back');
+       'a work cannot open a chromeless window with no way back');
+    eq(opened, ['https://example.com/'],
+       'and an http link is handed to the real browser instead');
+
+    opened.length = 0;
+    await js("window.open('file:///C:/Windows/win.ini', '_blank')").catch(function () {});
+    await wait(400);
+    eq(BrowserWindow.getAllWindows().length, windowsBefore, 'a file link opens no window');
+    eq(opened, [], 'and is not handed anywhere either');
+
+    M.out.openExternal = realOpen;
 
     report();
     app.quit();

@@ -96,6 +96,32 @@ function fileUrlToPath(url) {
   } catch (e) { return null; }
 }
 
+/* THE ONE THING THIS PROCESS DOES THAT LEAVES THE MACHINE, and therefore the
+ * one thing behind a seam -- the same reasoning as derive.js's reads, one
+ * layer down. The suite has to be able to assert that an http link goes to the
+ * real browser WITHOUT a browser tab actually opening: a suite with an effect
+ * outside the program it is testing is not a suite, it is a side effect with
+ * assertions attached.
+ *
+ * Learned the hard way. The first version of tools/shell.js called
+ * window.open('https://example.com/') against the real handler, so every run
+ * of it opened a tab in Trevor's Chrome. Three runs, three tabs, and he was
+ * the one who noticed. */
+var out = {
+  openExternal: function (url) { return shell.openExternal(url); }
+};
+
+/* What to do with a window a work tried to open. Pure, so the decision can be
+ * asserted without anything being opened at all.
+ *
+ * http(s) goes to the real browser, where there is a back button and an
+ * address bar. Everything else -- file:, javascript:, data:, about: -- is
+ * refused outright rather than opened in a chromeless window nobody can get
+ * out of. */
+function openPolicy(url) {
+  return { action: 'deny', external: /^https?:/i.test(String(url)) };
+}
+
 /* Everything the shell does with a key, as a pure decision. Kept out of the
  * event handler so the suite can drive it without a window: given the last
  * Escape time and this key, what happens? */
@@ -164,15 +190,16 @@ function createWindow() {
     if (p && isInside(p, roots)) return;
     event.preventDefault();
     process.stderr.write('Marquee shell: refused to navigate to ' + url + '\n');
-    if (/^https?:/i.test(url)) shell.openExternal(url);
+    if (openPolicy(url).external) out.openExternal(url);
   });
 
   /* Same for a new window: an http link goes to the real browser, where there
    * is a back button and an address bar. Anything else is refused rather than
    * opened in a chromeless window nobody can get out of. */
   win.webContents.setWindowOpenHandler(function (details) {
-    if (/^https?:/i.test(details.url)) shell.openExternal(details.url);
-    return { action: 'deny' };
+    var p = openPolicy(details.url);
+    if (p.external) out.openExternal(details.url);
+    return { action: p.action };
   });
 
   win.loadFile(PAGE);
@@ -215,6 +242,7 @@ if (electron.app) {
 }
 
 module.exports = {
-  T: T, allowedRoots: allowedRoots, isInside: isInside,
-  fileUrlToPath: fileUrlToPath, decide: decide, createWindow: createWindow
+  T: T, out: out, allowedRoots: allowedRoots, isInside: isInside,
+  fileUrlToPath: fileUrlToPath, decide: decide, openPolicy: openPolicy,
+  createWindow: createWindow
 };
