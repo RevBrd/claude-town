@@ -38,6 +38,10 @@ function Sitting(cfgFile, startQuery) {
   this.notice  = '';
   this.typed   = '';        // what has been typed into the discard confirmation
   this.pending = null;      // the classified restore waiting on that confirmation
+  this.log       = null;    // the repo whose history is open, and its commits
+  this.logCursor = 0;
+  this.logFrom   = 'repos'; // which list `l` was pressed from, so q goes back there
+  this.commit    = null;    // the one commit being looked at
   this.refresh();
 
   if (startQuery) {
@@ -92,14 +96,63 @@ Sitting.prototype.selected = function () {
 
 /* ----------------------------------------------------------------- drawing */
 
+/* ------------------------------------------------------------- history */
+
+/* `l` from either list. The pane is where you are deciding what to commit, and
+ * "what has been happening in here lately" is part of that decision -- most of
+ * all when the repo is live and the answer might be somebody else.
+ *
+ * It reads through tack.js, which cannot write. Opening the history of a repo
+ * is the one thing in this pane that has no consequences at all, so it needs
+ * no picking, no confirmation and no stale-picture check. */
+Sitting.prototype.openLog = function (repo) {
+  if (!repo) { this.notice = 'no repo to look at'; return; }
+  var got;
+  try { got = TK.readLog(repo.dir, { limit: TK.T.LOG_LINES }); }
+  catch (e) { this.notice = 'could not read the history: ' + e.message; return; }
+
+  if (got.error)  { this.notice = got.error; return; }
+  if (got.empty)  { this.notice = 'no commits yet in ' + repo.label; return; }
+  if (!got.commits.length) { this.notice = 'nothing in the history of ' + repo.label; return; }
+
+  this.logFrom   = this.view;
+  this.log       = { label: repo.label, dir: repo.dir, commits: got.commits };
+  this.logCursor = 0;
+  this.commit    = null;
+  this.notice    = '';
+  this.view      = 'history';
+};
+
+Sitting.prototype.openCommit = function () {
+  var c = this.log && this.log.commits[this.logCursor];
+  if (!c) return;
+  /* The stat, never the patch. This pane lives on the alternate screen so that
+   * nothing it draws lands in your scrollback -- which makes it exactly the
+   * wrong surface for four hundred lines of diff. The diff belongs in the
+   * glance, where the terminal's own scrollback is doing its job, so this
+   * names the command rather than pretending to be a pager. */
+  var det;
+  try { det = TK.readCommit(this.log.dir, c.hash, { patch: false }); }
+  catch (e) { this.notice = 'could not read that commit: ' + e.message; return; }
+  if (det.error) { this.notice = det.error; return; }
+  this.commit = det;
+  this.notice = '';
+  this.view   = 'commit';
+};
+
 Sitting.prototype.draw = function () {
   var L = [], s = this.state, self = this;
 
   var mood = this.view === 'files'
     ? (this.repo && this.repo.live ? 'alert' : 'awake')
+    : (this.view === 'history' || this.view === 'commit') ? 'pleased'
     : TK.moodOf(s);
   var l1, l2;
-  if (this.view === 'repos') {
+  if (this.view === 'history' || this.view === 'commit') {
+    l1 = C.body(this.log.label) + C.dim('  ·  history');
+    l2 = C.dim(this.log.commits.length + ' most recent · newest ' +
+               TK.ago(this.log.commits[0].when, Date.now()) + ' ago');
+  } else if (this.view === 'repos') {
     l1 = C.body('tack') + C.dim(' · ') +
          (s.totals.files ? C.warm(s.totals.files + ' loose') + C.dim(' in ' + s.totals.dirty + ' of ' + s.totals.repos + ' repos')
                          : C.good('everything is committed'));
@@ -129,7 +182,7 @@ Sitting.prototype.draw = function () {
       L.push(mark + body + (r.live ? C.live('   live') : ''));
     });
     L.push('');
-    L.push('  ' + C.dim('↑↓ move · enter open · r refresh · q quit'));
+    L.push('  ' + C.dim('↑↓ move · enter open · l history · r refresh · q quit'));
 
   } else if (this.view === 'files') {
     this.repo.files.forEach(function (f, i) {
@@ -145,7 +198,49 @@ Sitting.prototype.draw = function () {
     var n = this.selected().length;
     L.push('  ' + C.dim('space pick · a all · c commit · u put back') +
            (n ? C.warm('  (' + n + ' picked)') : '') +
-           C.dim(' · r refresh · q back'));
+           C.dim(' · l history · r refresh · q back'));
+
+  } else if (this.view === 'history') {
+    this.log.commits.forEach(function (c, i) {
+      var mark = i === self.logCursor ? C.body(' ▸ ') : '   ';
+      L.push(mark + C.dim(TK.lpad(TK.ago(c.when, Date.now()), 4)) + '  ' +
+             C.chrome(c.short) + '  ' +
+             TK.padVis(C.body(clip(c.subject, 48)), 49) +
+             (c.tack ? C.good('you') : ''));
+    });
+    L.push('');
+    L.push('  ' + C.dim('↑↓ move · enter open · q back'));
+
+  } else if (this.view === 'commit') {
+    var cm = this.commit;
+    L.push('  ' + C.body(cm.subject));
+    var cbody = (cm.body || '').split('\n').filter(function (line) {
+      return line.trim() !== TK.TACK_TRAILER; });
+    while (cbody.length && !cbody[0].trim()) cbody.shift();
+    while (cbody.length && !cbody[cbody.length - 1].trim()) cbody.pop();
+    if (cbody.length) {
+      L.push('');
+      cbody.slice(0, 12).forEach(function (line) { L.push('  ' + C.dim(clip(line, 74))); });
+      if (cbody.length > 12) {
+        L.push('  ' + C.dim('… ' + (cbody.length - 12) + ' more lines of message'));
+      }
+    }
+    L.push('');
+    if (!cm.files.length) {
+      L.push('    ' + C.chrome('no files changed'));
+    } else {
+      cm.files.slice(0, 14).forEach(function (fl) {
+        L.push('    ' + TK.padVis(C.body(clip(fl.path, 48)), 50) +
+               (fl.binary ? C.chrome('binary')
+                          : C.good('+' + fl.added) + ' ' + C.alert('-' + fl.removed)));
+      });
+      if (cm.files.length > 14) {
+        L.push('    ' + C.dim('and ' + (cm.files.length - 14) + ' more files'));
+      }
+    }
+    L.push('');
+    L.push('  ' + C.dim('the diff: ') + C.chrome('tack log ' + cm.short + ' -p'));
+    L.push('  ' + C.dim('q back'));
 
   } else if (this.view === 'message') {
     var picked = this.selected();
@@ -318,6 +413,28 @@ Sitting.prototype.key = function (k) {
     return true;
   }
 
+  /* Reading history has no consequences, so these two views come before every
+   * guard below them: nothing here can pick, stage, commit or discard. */
+  if (v === 'commit') {
+    if (k === 'q' || k === '\x1b') { this.view = 'history'; this.commit = null; return true; }
+    if (k === '\x03') return false;
+    return true;
+  }
+
+  if (v === 'history') {
+    if (k === 'q' || k === '\x1b') {
+      this.view = this.logFrom === 'files' && this.repo ? 'files' : 'repos';
+      this.log = null; this.notice = ''; return true;
+    }
+    if (k === '\x03') return false;
+    if (k === '\x1b[A' || k === 'k') {
+      this.logCursor = Math.max(0, this.logCursor - 1); return true; }
+    if (k === '\x1b[B' || k === 'j') {
+      this.logCursor = Math.min(this.log.commits.length - 1, this.logCursor + 1); return true; }
+    if (k === '\r' || k === '\n' || k === ' ') { this.openCommit(); return true; }
+    return true;
+  }
+
   if (v === 'done') { this.view = this.repo ? 'files' : 'repos';
                       this.notice = ''; if (this.repo) this.reopen(); return true; }
 
@@ -332,6 +449,10 @@ Sitting.prototype.key = function (k) {
   if (k === '\x1b[A' || k === 'k') { this.cursor = Math.max(0, this.cursor - 1); this.notice = ''; return true; }
   if (k === '\x1b[B' || k === 'j') { this.cursor = Math.min(list.length - 1, this.cursor + 1); this.notice = ''; return true; }
   if (k === 'r') { this.notice = ''; if (v === 'repos') this.refresh(); else this.reopen(); return true; }
+  if (k === 'l') {
+    this.openLog(v === 'repos' ? this.repos[this.cursor] : this.repo);
+    return true;
+  }
 
   if (v === 'repos') {
     if (k === '\r' || k === '\n' || k === ' ') { this.open(this.cursor); return true; }

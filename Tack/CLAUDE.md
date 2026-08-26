@@ -17,6 +17,8 @@ terminal. Or double-click **`Look.bat`** for the glance and **`Sit.bat`** for th
 | `tack` | the glance — what is loose, everywhere. Prints under your prompt and gets out of the way |
 | `tack show NAME` | the file list for one repo |
 | `tack sit [NAME]` | the pane — pick files, commit them |
+| `tack log [NAME]` | what happened, everywhere or in one repo, newest first |
+| `tack log HASH` | one commit — what it touched. `-p` for the diff |
 | `tack one` | a single line, for a status bar |
 | `tack faces` | every shape of him, in every mood |
 | `tack attic` | everything Tack has ever thrown away, and where it is kept |
@@ -220,6 +222,107 @@ The one thing it does that Marquee will not: `tack open salient_job1` reaches th
 build. Marquee hides it on purpose, because a launcher offering a discarded draft as though it
 were the game is its worst failure. A back door for looking at things has the opposite job.
 
+## Reading history
+
+```bash
+tack log                 what happened, everywhere, newest first
+tack log games           one repo
+tack log ab84e67         one commit: its message, and what it touched
+tack log ab84e67 -p      the diff itself
+```
+
+Three zoom levels, and the reason there are three is that "did anything happen" and "what exactly
+changed" are different questions asked at different moments. The first is the one you ask often,
+so it is what you get by typing the least.
+
+**The merged stream is the part that earns its place.** `git log` answers for the folder you are
+standing in; nothing answers for the tree. This is the sweep's one idea applied to history instead
+of to the working tree, and the same argument holds — ten repos, no vantage point. The zoom into
+one repo falls out of it for free and is the part that will still be here when you have outgrown
+the rest of this tool, because git will still not have grown a way to do the first thing.
+
+**It costs no new authority.** `log` has been on `READ_ONLY_VERBS` since pass 1, so the entire
+feature lives in the tier that provably cannot write, and the list is still four verbs long. The
+commit view uses `git log -1 --stat` and `git log -1 -p` rather than `git show`, which does the
+same job — a fifth verb bought nothing and so was not bought.
+
+It is built on `sweepPaths`, not `sweep`, for the same reason the back door is: history does not
+need to know what is loose, and asking ten repos for a status they will never print costs about a
+second. `tack log` is roughly 0.5s against the glance's 1.4s.
+
+### The guard that this pass made necessary
+
+**The verb allowlist stopped being sufficient here, and that is worth understanding before adding
+anything else.**
+
+Until this pass, every argument Tack handed git was a literal typed into `tack.js`. Nothing could
+vary, so guarding the verb guarded everything. `tack log <ref>` is the first argument that comes
+from whoever is typing.
+
+That matters because a *reading* verb can be made to write:
+
+```
+git log --output=FILE      # writes FILE. `log` is on the allowlist.
+```
+
+So there is a second guard, on the argument rather than the verb. `safeRef()` requires a ref to
+look like a ref — letters, digits, dot, dash, slash, underscore — and to begin with something
+other than `-`, which is what makes an argument an option. Ranges (`a..b`) are refused too.
+`safeCount()` does the same one size down for `-n` and `--days`: they are rebuilt from a parsed
+integer rather than passed through as text.
+
+Seventeen refused strings are asserted by value, and there are mutants that remove the guard,
+allow a leading dash, and allow a range.
+
+`git check-ref-format` would be the thorough answer and is deliberately not used: it means putting
+a second git verb on the allowlist in order to validate an argument to the first, which is a
+larger hole than the one it closes.
+
+**The rule to carry forward: an allowlist of verbs is only a complete guard while every argument
+is a literal.** The next feature that takes user input has to bring its own argument guard.
+
+### Which commits are yours
+
+Every commit in this tree is authored `RevBrd`, whether a session made it or Trevor did, so git's
+own author field cannot tell them apart. What can is the `Committed with Tack.` trailer that
+`write.js` puts in every commit made from the pane. So the log marks those `you`.
+
+That is a fact being read off the message, not intent being inferred — which is the distinction
+the live gate is about, one section down. Tack does not guess who did anything.
+
+### A count it refused to make
+
+The first draft printed `60 older not shown`. The suite caught it, and the reason is worth keeping.
+
+Each repo is asked for `limit` commits, so the merged pool is at most `limit × repos`. That number
+was really "how many I held back out of the batch I happened to fetch" — which understates by
+however much history sits beyond each repo's own cut, in an amount nothing can know without
+reading every commit in the tree.
+
+What *can* be known exactly is whether anything was left out at all: it was, if the pool overflowed
+**or** if any single repo returned a full share and might have had more behind it. So the boolean
+is reported and the count is gone. It now says `older commits not shown`.
+
+Same family as `10 loose` rather than `10 files loose`: do not state a number you cannot stand
+behind, even when a number would look more useful than the truth.
+
+### In the pane
+
+`l` from either list opens the history of the repo under the cursor, `enter` opens one commit, `q`
+comes back. It works on a **clean** repo, which no other verb in the pane does — everything else
+needs something loose to act on, and "what has been happening in here" is a question you ask when
+there is nothing to do as much as when there is.
+
+Both views are asserted inert: `a`, `c` and `u` do nothing while history is open, because each of
+them is one `return true` away from being live in a view that must stay read-only. There are
+mutants that let each view fall through to the keys that stage and discard.
+
+**The pane shows the stat and never the patch, and does not even fetch it.** It runs on the
+alternate screen precisely so that nothing it draws lands in your scrollback — which makes it the
+wrong surface for four hundred lines of diff. The diff belongs in the glance, where the terminal's
+own scrollback is doing its job. So the commit view names the command instead of pretending to be
+a pager.
+
 ## The live gate, and why it is a warning rather than a block
 
 **Built twice, wrong twice, removed.** Worth writing down because the reasoning generalises.
@@ -276,16 +379,18 @@ Committed with Tack.
 ```
 Tack/
   CLAUDE.md          this file
-  tack.js            the engine and the glance. CANNOT WRITE. Tuning block at the top
+  tack.js            the engine, the glance and the history. CANNOT WRITE.
+                     Tuning block at the top; safeRef beside git()
   write.js           the only file that can write. Its own allowlist and guards
-  sit.js             the pane -- drawing and keys. Pure enough to test without a terminal
+  sit.js             the pane -- drawing and keys, including the two read-only
+                     history views. Pure enough to test without a terminal
   undo.js            the only file that can destroy work. One verb, and the attic
   open.js            the back door -- find a file, refuse to run it, hand it over
   roots.json         the only hand-written list: roots, never repos
   tack.cmd           the shim, so it is one word instead of a path
   Look.bat           double-click: the glance
   Sit.bat            double-click: the pane
-  tools/selftest.js  361 assertions + 78 mutants across all five files
+  tools/selftest.js  497 assertions + 107 mutants across all five files
 ```
 
 The split is the security model, not tidiness. `tack.js` runs on every glance and has no
@@ -426,9 +531,15 @@ name** -- one `deleted`, one `untracked`. Restoring a worktree from an index wit
 path is exactly the shape of an accidental delete. It survives, and the duplicate is collapsed
 before anything reaches git rather than being acted on twice with two different intentions.
 
-**A search across the tree** — one query, ten repos — is the obvious next *read*, and reads are
-cheap. `tack find <text>` would answer "where did I write that" without knowing which repo it was
-in. Nothing has asked for it yet.
+**History is done** (25 Aug 2026) — see *Reading history* above. The `tack find <text>` idea it
+was filed beside is still open and is now cheaper to build, because the argument guard it would
+have needed already exists.
+
+**A search across the tree** — one query, ten repos — remains the obvious next *read*. `tack find
+<text>` would answer "where did I write that" without knowing which repo it was in. It would want
+`grep` on the allowlist, which is a fifth verb and therefore a deliberate conversation rather than
+a convenience: `git grep` accepts `-O` and `--open-files-in-pager`, which run a program. The
+argument guard is the model to copy, not the verb list.
 
 **KSP Tools' `package-lock.json` has been loose for three weeks** and is probably an accident. Tack
 reports it; deciding is Trevor's.
@@ -462,5 +573,16 @@ Two calls of Trevor's that improved the design and are worth attributing: **bloc
 folder** rather than `log.js` by name, which removes a judgement call from a guard that should not
 have one; and **leaving `git add -A` out entirely** rather than building it behind a warning, asked
 for the moment he understood what it did.
+
+The history -- `tack log`, `safeRef`, the pane's two reading views, and 136 more assertions with
+29 more mutants -- by **CTown 8** (Opus 5), 25 Aug 2026. Trevor asked for a way to read commit
+logs and wanted both the whole tree and one repo at a time; the three zoom levels are his ask for
+"a quick read that you can zoom in from" taken literally.
+
+Two things I would not have found without writing the tests. The **argument guard** came out of
+checking whether a commit view needed `git show` on the allowlist -- it does not, and looking at
+why turned up that `git log --output=` writes a file, which meant the verb list had quietly
+stopped being a sufficient guard the moment a user-typed ref existed. And the **count that was a
+lie** was caught by an assertion I had written expecting it to pass.
 
 Same convention as the rest of the tree: **if you change something here, add yourself.**

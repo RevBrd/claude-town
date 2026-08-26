@@ -1033,6 +1033,337 @@ function suite(TK, W, SIT, U, O) {
      'and the file really did go back');
   ok(/discarded/.test(ps.notice), 'and the report says what happened');
   ok(ps.notice.indexOf(U.atticRoot()) !== -1, 'and where the copy is');
+
+  section('refs: the allowlist is not sufficient once arguments stop being literals');
+
+  /* Until this pass every argument Tack handed git was a literal in tack.js,
+   * so the verb allowlist was the whole guard. A ref typed by a person is the
+   * first one that is not, and `git log --output=FILE` writes a file -- so a
+   * permitted READING verb can be made to write. These assert the second
+   * guard, the one on the argument. */
+  eq(TK.safeRef('ab84e67'), 'ab84e67', 'a short hash is a ref');
+  eq(TK.safeRef('HEAD'), 'HEAD', 'so is HEAD');
+  eq(TK.safeRef('refs/heads/master'), 'refs/heads/master', 'so is a full ref name');
+  eq(TK.safeRef('v1.2.3-rc1'), 'v1.2.3-rc1', 'so is a tag with dots and dashes');
+
+  ['--output=/tmp/pwned', '-o', '--upload-pack=calc', '-p', '--all',
+   'a..b', 'HEAD..HEAD~3', '', '   ', 'a b', 'a;b', 'a|b', 'a$(id)b',
+   'a`id`b', 'a\nb', '--', '-'].forEach(function (bad) {
+    throws(function () { TK.safeRef(bad); },
+           'safeRef refuses ' + JSON.stringify(bad));
+  });
+
+  /* The specific one worth naming: this is the argument that turns a reading
+   * verb into a writing one, and it is refused by the argument guard rather
+   * than by the verb list, which would happily allow it. */
+  throws(function () { TK.safeRef('--output=x'); },
+         'safeRef refuses the argument that makes `git log` write a file');
+  ok(TK.READ_ONLY_VERBS.indexOf('log') !== -1,
+     'while `log` itself is still permitted, so the guard is doing the work');
+
+  /* `git show` would have been the obvious way to build a commit view. It is
+   * deliberately absent: `log -1 -p` does the same job with a verb that is
+   * already on the list, so the commit view cost the allowlist nothing. */
+  ok(TK.READ_ONLY_VERBS.indexOf('show') === -1,
+     'the commit view did not buy a fifth verb');
+
+  eq(TK.safeCount('5', 15, 500), 5, 'safeCount reads a number');
+  eq(TK.safeCount(undefined, 15, 500), 15, 'and falls back when there is none');
+  eq(TK.safeCount('0', 15, 500), 15, 'and refuses zero');
+  eq(TK.safeCount('-4', 15, 500), 15, 'and refuses a negative');
+  eq(TK.safeCount('9999', 15, 500), 500, 'and clamps to the maximum');
+  eq(TK.safeCount('7; rm -rf /', 15, 500), 7, 'and yields an integer, never text');
+
+  section('parsing a log');
+
+  var U1 = '\x1f', R1 = '\x1e';
+  var logFixture =
+    ['h1', 'h1s', '1700000000', 'Test', 'first subject', 'body one'].join(U1) + R1 + '\n' +
+    ['h2', 'h2s', '1700000060', 'Test', 'second subject',
+     'why it happened\n\nCommitted with Tack.'].join(U1) + R1 + '\n' +
+    ['h3', 'h3s', '1700000120', 'Test', 'third subject',
+     'a body that contains ' + U1 + ' a unit separator'].join(U1) + R1 + '\n';
+
+  var parsed = TK.parseLog(logFixture);
+  eq(parsed.length, 3, 'three commits parse out');
+  eq(parsed[0].subject, 'first subject', 'the subject survives');
+  eq(parsed[0].when, 1700000000000, 'the date is milliseconds');
+  eq(parsed[1].tack, true, 'the Tack trailer is seen');
+  eq(parsed[0].tack, false, 'and not seen where it is absent');
+  eq(parsed[2].body, 'a body that contains ' + U1 + ' a unit separator',
+     'a body containing the separator does not shift the fields before it');
+  eq(TK.parseLog('').length, 0, 'empty output parses to nothing');
+  eq(TK.parseLog('   \n  ').length, 0, 'and so does whitespace');
+
+  section('reading history from real repos');
+
+  /* Dates are pinned so the ordering assertions test the sort rather than how
+   * fast the machine ran the fixtures. */
+  function commitAt(dir, msg, iso) {
+    return cp.spawnSync('git', ['-C', dir, 'commit', '-qm', msg], {
+      encoding: 'utf8', windowsHide: true,
+      env: Object.assign({}, process.env,
+        { GIT_AUTHOR_DATE: iso, GIT_COMMITTER_DATE: iso })
+    });
+  }
+
+  var hroot = tmp('history');
+  var hA = tmp('history/alpha'), hB = tmp('history/beta'), hEmpty = tmp('history/nothing');
+
+  [hA, hB, hEmpty].forEach(function (d) {
+    rawGit(d, ['init', '-q']);
+    rawGit(d, ['config', 'user.email', 'test@example.com']);
+    rawGit(d, ['config', 'user.name', 'Test']);
+  });
+
+  fs.writeFileSync(path.join(hA, 'one.txt'), 'a\n');
+  rawGit(hA, ['add', 'one.txt']);
+  commitAt(hA, 'alpha first', '2024-01-01T00:00:00+0000');
+
+  fs.writeFileSync(path.join(hA, 'one.txt'), 'a\nb\nc\n');
+  fs.writeFileSync(path.join(hA, 'two.txt'), 'new\n');
+  rawGit(hA, ['add', '.']);
+  commitAt(hA, 'alpha second\n\nthe reason\n\nCommitted with Tack.',
+           '2024-01-03T00:00:00+0000');
+
+  fs.writeFileSync(path.join(hB, 'b.txt'), 'b\n');
+  rawGit(hB, ['add', 'b.txt']);
+  commitAt(hB, 'beta only', '2024-01-02T00:00:00+0000');
+
+  var la = TK.readLog(hA, { limit: 10 });
+  eq(la.commits.length, 2, 'both of alpha\u2019s commits are read');
+  eq(la.commits[0].subject, 'alpha second', 'newest first');
+  eq(la.commits[0].tack, true, 'and the trailer is read off the real commit');
+  eq(la.commits[1].tack, false, 'and the other one does not claim it');
+  eq(la.error, null, 'a readable repo reports no error');
+
+  eq(TK.readLog(hA, { limit: 1 }).commits.length, 1, 'the limit is obeyed');
+
+  var le = TK.readLog(hEmpty, { limit: 10 });
+  eq(le.empty, true, 'a repo with no commits is empty');
+  eq(le.error, null, 'and that is a state, not a fault');
+  eq(le.commits.length, 0, 'and has nothing to show');
+
+  section('merging ten histories into one');
+
+  var hCfg = path.join(TMP, 'history-roots.json');
+  fs.writeFileSync(hCfg, JSON.stringify({
+    roots: [{ path: hroot, depth: 1 }], skip: ['.git'] }));
+
+  var merged = TK.sweepLog(hCfg, Date.now(), { limit: 10 });
+  eq(merged.commits.map(function (c) { return c.subject; }),
+     ['alpha second', 'beta only', 'alpha first'],
+     'commits from different repos interleave by date, newest first');
+  eq(merged.commits[0].repo, TK.labelFor(hA), 'every commit carries its repo');
+  eq(merged.truncated, false, 'nothing is held back when everything fits');
+
+  var one = TK.sweepLog(hCfg, Date.now(), { limit: 1 });
+  eq(one.commits.length, 1, 'the limit applies to the merged stream');
+  /* Not a count. Each repo is asked for `limit` commits, so the size of the
+   * merged pool is an artefact of the fetch rather than a fact about the
+   * tree -- the only exact thing available is that something was left out. */
+  eq(one.truncated, true, 'and it says plainly that something was left out');
+
+  var onlyBeta = TK.sweepLog(hCfg, Date.now(), { only: 'beta', limit: 10 });
+  eq(onlyBeta.commits.map(function (c) { return c.subject; }), ['beta only'],
+     'a name narrows it to one repo');
+
+  var missed = TK.sweepLog(hCfg, Date.now(), { only: 'nosuchrepo', limit: 10 });
+  eq(missed.repos.length, 0, 'a name nothing matches yields no repos rather than everything');
+  ok(missed.known.length >= 3, 'while still knowing what it could have matched');
+
+  section('finding and reading one commit');
+
+  var head = rawGit(hA, ['rev-parse', 'HEAD']).stdout.trim();
+  var shortHead = head.slice(0, 7);
+
+  var found = TK.findCommit(hCfg, shortHead);
+  eq(found.length, 1, 'a hash is found in exactly the repo that holds it');
+  eq(found[0].dir, hA, 'and it is the right one');
+  eq(TK.findCommit(hCfg, 'ffffff0').length, 0, 'a hash nobody holds is found nowhere');
+
+  /* Two repos both have a HEAD, and the empty one has none. That is the
+   * ambiguity case without needing two repos to collide on a short hash:
+   * every repo that holds the ref is reported, and nothing resolves it. */
+  var bothHave = TK.findCommit(hCfg, 'HEAD');
+  eq(bothHave.length, 2, 'a ref two repos hold is found in both');
+  eq(bothHave.map(function (h) { return h.label; }).sort(),
+     [TK.labelFor(hA), TK.labelFor(hB)].sort(), 'and both are named');
+  ok(bothHave[0].hash !== bothHave[1].hash, 'each with its own commit');
+
+  var pick = TK.renderPickCommit('HEAD', bothHave).join('\n');
+  ok(pick.indexOf(TK.labelFor(hA)) !== -1, 'the ambiguity lists the first');
+  ok(pick.indexOf(TK.labelFor(hB)) !== -1, 'and the second');
+  ok(pick.indexOf('2 repos') !== -1, 'and says how many there were');
+
+
+  var det = TK.readCommit(hA, shortHead, {});
+  eq(det.subject, 'alpha second', 'the commit reads back');
+  eq(det.files.map(function (f) { return f.path; }).sort(), ['one.txt', 'two.txt'],
+     'with the files it touched');
+  eq(det.patch, null, 'and no diff unless one was asked for');
+
+  var withP = TK.readCommit(hA, shortHead, { patch: true });
+  ok(withP.patch && withP.patch.length > 0, 'and a diff when one was');
+  ok(withP.patch.join('\n').indexOf('+b') !== -1, 'which contains the change');
+
+  eq(TK.readCommit(hA, 'ffffff0', {}).files.length, 0,
+     'a commit that is not there reports nothing rather than guessing');
+
+  section('log arguments');
+
+  eq(TK.parseLogArgs([]).words, [], 'no arguments means no target');
+  eq(TK.parseLogArgs(['-p']).patch, true, '-p asks for the diff');
+  eq(TK.parseLogArgs(['--patch']).patch, true, 'and so does --patch');
+  eq(TK.parseLogArgs(['-n', '5']).limit, 5, '-n N sets the count');
+  eq(TK.parseLogArgs(['-n5']).limit, 5, 'and so does -nN');
+  eq(TK.parseLogArgs(['--number=9']).limit, 9, 'and so does --number=N');
+  eq(TK.parseLogArgs(['--days', '3']).days, 3, '--days N sets the window');
+  eq(TK.parseLogArgs(['--days=3']).days, 3, 'and so does --days=N');
+  eq(TK.parseLogArgs(['claude', 'town']).words, ['claude', 'town'],
+     'the rest is the target, spaces and all');
+  eq(TK.parseLogArgs(['-n', '5', 'games']).words, ['games'],
+     'and an option does not swallow the name after its value');
+
+  eq(TK.parseLogArgs(['--oops']).bad, '--oops', 'an unknown option is refused by name');
+  eq(TK.parseLogArgs(['--output=/tmp/x']).bad, '--output=/tmp/x',
+     'including the one that would make git write a file');
+  eq(TK.parseLogArgs(['--oops']).words, [], 'and it never becomes a search term');
+
+  eq(TK.looksLikeRef(['ab84e67']), true, 'a hex string is a candidate ref');
+  eq(TK.looksLikeRef(['abcd']), true, 'four characters is enough');
+  eq(TK.looksLikeRef(['abc']), false, 'three is not');
+  eq(TK.looksLikeRef(['games']), false, 'a name that is not hex is not a ref');
+  eq(TK.looksLikeRef(['dead', 'beef']), false, 'and two words are never a ref');
+  eq(TK.looksLikeRef(['decade']), true,
+     'a name that happens to be hex is a candidate, settled by asking git');
+
+  section('the log, drawn');
+
+  var drawn = TK.renderLog(merged, {}).join('\n');
+  ok(drawn.indexOf('alpha second') !== -1, 'the newest subject is on the page');
+  ok(drawn.indexOf('beta only') !== -1, 'and so is the other repo');
+  ok(drawn.indexOf(' you') !== -1, 'a commit carrying the trailer is marked');
+  eq(drawn.split('\n').filter(function (l) { return / you$/.test(l); }).length, 1,
+     'and only that one is');
+
+  var emptyDraw = TK.renderLog(
+    { now: Date.now(), commits: [], repos: [], missingRoots: [], known: [], truncated: false,
+      only: null, days: 7 }, {}).join('\n');
+  ok(emptyDraw.indexOf('no commits') !== -1, 'an empty window says so');
+
+  var missDraw = TK.renderLog(
+    { now: Date.now(), commits: [], repos: [], missingRoots: [], truncated: false,
+      known: ['Games', 'Codeville'], only: 'nosuch', days: null }, {}).join('\n');
+  ok(missDraw.indexOf('no repo matching') !== -1, 'an unmatched name says so');
+  ok(missDraw.indexOf('Games') !== -1, 'and lists what it does know');
+
+  eq(TK.matchedLabel(onlyBeta), TK.labelFor(hB),
+     'the header names the repo git answered for, not the letters typed at it');
+  ok(/2 repos matching/.test(TK.matchedLabel(
+       { only: 'a', repos: [{ label: 'x' }, { label: 'y' }], commits: [] })),
+     'and says two when a name matched two');
+
+  section('one commit, drawn');
+
+  var cDraw = TK.renderCommit(withP, Date.now(), { patch: true }).join('\n');
+  ok(cDraw.indexOf('alpha second') !== -1, 'the subject is shown');
+  ok(cDraw.indexOf('the reason') !== -1, 'and the body, which is why a log is worth reading');
+  ok(cDraw.indexOf('one.txt') !== -1, 'and the files it touched');
+
+  ok(cDraw.indexOf(TK.TACK_TRAILER) === -1, 'the trailer is not echoed back');
+  ok(cDraw.indexOf('yours') !== -1, 'it is reported as a mark instead');
+
+  var noP = TK.renderCommit(det, Date.now(), {}).join('\n');
+  ok(noP.indexOf('-p') !== -1, 'without a diff it says how to get one');
+
+  var errDraw = TK.renderCommit({ error: 'no commit zzz', files: [] }, Date.now(), {}).join('\n');
+  ok(errDraw.indexOf('no commit zzz') !== -1, 'an unreadable commit says so');
+
+  var huge = { label: 'x', short: 'abc1234', when: Date.now(), who: 'Test', tack: false,
+               subject: 's', body: '', dir: 'd',
+               files: [{ added: '1', removed: '0', path: 'f' }], patch: [] };
+  for (var hp = 0; hp < TK.T.PATCH_MAX + 40; hp++) huge.patch.push('+line ' + hp);
+  var hugeDraw = TK.renderCommit(huge, Date.now(), { patch: true }).join('\n');
+  ok(hugeDraw.indexOf('40 more lines') !== -1, 'a long diff counts what it did not show');
+  ok(hugeDraw.indexOf('git -C') !== -1, 'and hands over to git for the rest');
+  section('history, through the pane');
+
+  var hs = new SIT.Sitting(hCfg);
+
+  /* The empty repo sorts first, which makes it the accidental default -- and
+   * `l` on a repo with no commits has to say so rather than opening a blank
+   * list. */
+  eq(hs.repos[hs.cursor].label, TK.labelFor(hEmpty), 'the empty repo is where the cursor lands');
+  hs.key('l');
+  eq(hs.view, 'repos', 'l on a repo with no commits does not open anything');
+  ok(/no commits yet/.test(hs.notice), 'and says why');
+
+  /* Every other verb in this pane needs something loose to act on. History is
+   * the one that works on a repo where there is nothing to do. */
+  var alphaAt = hs.repos.map(function (r) { return r.label; }).indexOf(TK.labelFor(hA));
+  ok(alphaAt !== -1, 'alpha is in the pane');
+  hs.cursor = alphaAt;
+  eq(hs.repos[alphaAt].loose, 0, 'and it is clean');
+  hs.key('l');
+  eq(hs.view, 'history', 'l opens the history of a clean repo all the same');
+  eq(hs.log.commits.length, 2, 'with its commits');
+
+  var hdraw = hs.draw();
+  ok(hdraw.indexOf('alpha second') !== -1, 'the newest subject is drawn');
+  ok(hdraw.indexOf('history') !== -1, 'and the header says what this is');
+  ok(hdraw.indexOf('you') !== -1, 'and the trailer is marked here too');
+
+  /* Nothing in these two views may touch anything. The keys that pick, commit
+   * and discard are inert while the history is open -- asserted rather than
+   * assumed, because they are one `return true` away from being live. */
+  /* Space is deliberately absent from this list: in the repo list it opens
+   * the thing under the cursor, and it does the same here. */
+  var pickedBefore = JSON.stringify(hs.picked);
+  ['a', 'c', 'u'].forEach(function (k) { hs.key(k); });
+  eq(hs.view, 'history', 'picking and committing keys do nothing in the history');
+  eq(JSON.stringify(hs.picked), pickedBefore, 'and nothing gets picked');
+
+  hs.key('\x1b[B');
+  eq(hs.logCursor, 1, 'the cursor moves down');
+  hs.key('\x1b[A');
+  eq(hs.logCursor, 0, 'and back up');
+  hs.key('\x1b[A');
+  eq(hs.logCursor, 0, 'and stops at the top');
+
+  hs.key(' ');
+  eq(hs.view, 'commit', 'space opens it, the same as in the repo list');
+  hs.key('q');
+  eq(hs.view, 'history', 'and q comes straight back');
+
+  hs.key('\r');
+  eq(hs.view, 'commit', 'so does enter');
+  eq(hs.commit.subject, 'alpha second', 'the right one');
+  /* It must not even READ the patch. The pane has nowhere to put four
+   * hundred lines, so fetching them would be work done to be thrown away
+   * on every commit anyone looks at. */
+  eq(hs.commit.patch, null, 'and the pane did not fetch a diff it cannot show');
+  var cdraw = hs.draw();
+  ok(cdraw.indexOf('one.txt') !== -1, 'the files it touched are drawn');
+  ok(cdraw.indexOf('the reason') !== -1, 'and the message body');
+  ok(cdraw.indexOf(TK.TACK_TRAILER) === -1, 'and not the trailer');
+
+  /* The pane is on the alternate screen so nothing it draws reaches your
+   * scrollback, which makes it the wrong place for a long diff. It names the
+   * command instead of pretending to be a pager. */
+  ok(/-p/.test(cdraw), 'and it says where the diff is');
+
+  var pickedStill = JSON.stringify(hs.picked);
+  [' ', 'a', 'c', 'u'].forEach(function (k) { hs.key(k); });
+  eq(hs.view, 'commit', 'every one of those keys is inert on one commit');
+  eq(JSON.stringify(hs.picked), pickedStill, 'and still nothing is picked');
+
+  hs.key('q');
+  eq(hs.view, 'history', 'q leaves the commit for the list');
+  hs.key('q');
+  eq(hs.view, 'repos', 'and q again leaves the list for where it started');
+  eq(hs.log, null, 'and forgets it');
+
 }
 
 /* ---------------------------------------------------------------- mutation */
@@ -1372,8 +1703,133 @@ var MUTANTS_TACK2 = [
    '      return readRepo(d, Date.now());']
 ].map(function (m) { return { file: 'tack.js', name: m[0], from: m[1], to: m[2] }; });
 
+/* The log pass. Half of these break a guard and half break a claim the render
+ * makes; both kinds are here because both kinds are things a later session
+ * could remove while believing it was tidying up. */
+var MUTANTS_LOG = [
+  ['the ref guard is removed',
+   "  if (!REF_OK.test(s) || s.indexOf('..') !== -1) {",
+   "  if (false) {"],
+
+  ['a ref may begin with a dash, so an option can pose as one',
+   "var REF_OK = /^[0-9A-Za-z][0-9A-Za-z._\\/-]{0,80}$/;",
+   "var REF_OK = /^[0-9A-Za-z-][0-9A-Za-z._\\/-]{0,80}$/;"],
+
+  ['a ref may be a range',
+   "  if (!REF_OK.test(s) || s.indexOf('..') !== -1) {",
+   "  if (!REF_OK.test(s)) {"],
+
+  ['a count is passed through as text rather than rebuilt as a number',
+   "  var v = parseInt(n, 10);\n  if (!isFinite(v) || v < 1) return dflt;\n  return Math.min(v, max);",
+   "  if (n === undefined || n === null || n === '') return dflt;\n  return n;"],
+
+  ['a count is not clamped',
+   "  return Math.min(v, max);",
+   "  return v;"],
+
+  ['a body containing the separator shifts the fields before it',
+   "    var body = f.slice(5).join(LOG_UNIT);",
+   "    var body = f[5];"],
+
+  ['the trailer test is inverted, so every commit claims to be yours',
+   "      tack:    body.indexOf(TACK_TRAILER) !== -1",
+   "      tack:    body.indexOf(TACK_TRAILER) === -1"],
+
+  ['a repo with no commits is reported as broken rather than empty',
+   "    if (!head.ok) { rec.empty = true; return rec; }",
+   "    if (false) { rec.empty = true; return rec; }"],
+
+  ['the merged stream is oldest first',
+   "  all.sort(function (a, b) { return b.when - a.when || a.repo.localeCompare(b.repo); });",
+   "  all.sort(function (a, b) { return a.when - b.when || a.repo.localeCompare(b.repo); });"],
+
+  ['a name does not narrow the sweep',
+   "    if (opts.only && r.label.toLowerCase().indexOf(opts.only.toLowerCase()) === -1) continue;",
+   "    if (false) continue;"],
+
+  ['holding commits back is not reported',
+   "  var truncated = all.length > shown.length || repos.some(function (r) {",
+   "  var truncated = false && all.length > shown.length || repos.some(function (r) {"],
+
+  ['a repo that filled its share is assumed to have had no more',
+   "  var truncated = all.length > shown.length || repos.some(function (r) {\n    return r.commits.length >= want; });",
+   "  var truncated = all.length > shown.length;"],
+
+  ['an ambiguous ref is resolved by taking the first repo',
+   "  return hits;\n}\n\n/* One commit, in full",
+   "  return hits.slice(0, 1);\n}\n\n/* One commit, in full"],
+
+  ['the diff is read whether it was asked for or not',
+   "  if (opts.patch) {",
+   "  if (true) {"],
+
+  ['an unknown option becomes a search term',
+   "    if (a.charAt(0) === '-') { opt.bad = a; return opt; }",
+   "    if (false) { opt.bad = a; return opt; }"],
+
+  ['three characters are enough to be a hash',
+   "  return words.length === 1 && /^[0-9a-fA-F]{4,40}$/.test(words[0]);",
+   "  return words.length === 1 && /^[0-9a-fA-F]{3,40}$/.test(words[0]);"],
+
+  ['several words can be a hash',
+   "  return words.length === 1 && /^[0-9a-fA-F]{4,40}$/.test(words[0]);",
+   "  return /^[0-9a-fA-F]{4,40}$/.test(words[0]);"],
+
+  ['Tack quotes its own trailer back at you',
+   "  var body = (c.body || '').split('\\n').filter(function (line) {\n    return line.trim() !== TACK_TRAILER; });",
+   "  var body = (c.body || '').split('\\n');"],
+
+  ['the commit body is clipped, losing the thing worth reading',
+   "    body.forEach(function (line) { L.push('  ' + C.dim(line)); });",
+   "    body.forEach(function (line) { L.push('  ' + C.dim(clip(line, 40))); });"],
+
+  ['a long diff is truncated silently',
+   "    if (lines.length > cap) {",
+   "    if (false) {"],
+
+  ['the header repeats what was typed instead of what git answered for',
+   "  if (labels.length === 1) return labels[0];",
+   "  if (labels.length === 1) return s.only;"],
+
+  ['a name matching two repos claims to have matched one',
+   "  return labels.length + ' repos matching \"' + s.only + '\"';",
+   "  return labels[0];"]
+].map(function (m) { return { file: 'tack.js', name: m[0], from: m[1], to: m[2] }; });
+
+
+/* The pane's two reading views. Both are one `return true` away from letting
+ * a key that stages or discards through, which is the thing to keep proving. */
+var MUTANTS_SITLOG = [
+  ['the history view falls through to the keys that pick and commit',
+   "  if (v === 'history') {",
+   "  if (false) {"],
+
+  ['the commit view falls through to the keys that pick and commit',
+   "  if (v === 'commit') {",
+   "  if (false) {"],
+
+  ['l opens the history of whatever the other list was pointing at',
+   "    this.openLog(v === 'repos' ? this.repos[this.cursor] : this.repo);",
+   "    this.openLog(this.repos[this.cursor]);"],
+
+  ['a repo with no commits opens a blank history',
+   "  if (got.empty)  { this.notice = 'no commits yet in ' + repo.label; return; }",
+   "  if (false)  { this.notice = 'no commits yet in ' + repo.label; return; }"],
+
+  ['the pane fetches a diff it has nowhere to draw',
+   "  try { det = TK.readCommit(this.log.dir, c.hash, { patch: false }); }",
+   "  try { det = TK.readCommit(this.log.dir, c.hash, { patch: true }); }"],
+
+  ['q out of a commit quits the pane instead of going back',
+   "    if (k === 'q' || k === '\\x1b') { this.view = 'history'; this.commit = null; return true; }",
+   "    if (k === 'q' || k === '\\x1b') { return false; }"],
+
+  ['the pane quotes Tack’s own trailer back at you',
+   "    var cbody = (cm.body || '').split('\\n').filter(function (line) {\n      return line.trim() !== TK.TACK_TRAILER; });",
+   "    var cbody = (cm.body || '').split('\\n');"]
+].map(function (m) { return { file: 'sit.js', name: m[0], from: m[1], to: m[2] }; });
 MUTANTS = MUTANTS.concat(MUTANTS_WRITE, MUTANTS_SIT, MUTANTS_UNDO, MUTANTS_SIT2,
-                         MUTANTS_OPEN, MUTANTS_TACK2);
+                         MUTANTS_OPEN, MUTANTS_TACK2, MUTANTS_LOG, MUTANTS_SITLOG);
 
 var SOURCES = {
   'tack.js':  fs.readFileSync(path.join(ROOT, 'tack.js'),  'utf8'),

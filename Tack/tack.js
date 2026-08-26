@@ -26,6 +26,9 @@ var T = {
   PREVIEW_FILES:   2,   // how many filenames to show per repo before "+N"
   LABEL_MAX:      24,   // repo name column
   PREVIEW_MAX:    32,   // filename column
+  SUBJECT_MAX:    46,   // commit subject column in `tack log`
+  LOG_LINES:      15,   // commits `tack log` shows before counting the rest
+  PATCH_MAX:     400,   // diff lines shown before it counts the rest
   SCAN_TIMEOUT:  8000,  // ms per git call
   SHAPE:       'bat'  // which creature: plain | bat | batlite | ascii. `tack faces` shows them
 };
@@ -54,6 +57,47 @@ function git(repo, args) {
     out: r.stdout ? r.stdout.toString('utf8') : '',
     err: r.stderr ? r.stderr.toString('utf8') : ''
   };
+}
+
+/* ---------------------------------------------------------------- refs */
+
+/* THE VERB ALLOWLIST IS NOT SUFFICIENT ON ITS OWN, and this is the pass that
+ * made that true. Until now every argument Tack handed git was a literal typed
+ * into this file -- the allowlist was the whole guard because nothing else
+ * could vary. `tack log <ref>` is the first argument that comes from whoever
+ * is typing.
+ *
+ * That matters because a reading verb can be made to write: `git log
+ * --output=FILE` writes its output to a file, and `log` is on the allowlist.
+ * So the guard has to sit on the argument as well as on the verb.
+ *
+ * A ref must look like a ref. It cannot begin with `-`, which is what makes an
+ * argument an option, and it cannot contain `..`, which is what makes one ref
+ * a range. Anything else is refused by name rather than passed along.
+ *
+ * `git check-ref-format` would be the thorough answer and is deliberately not
+ * used: it is a second git verb on the allowlist to validate an argument to
+ * the first, which is a larger hole than the one it closes. */
+var REF_OK = /^[0-9A-Za-z][0-9A-Za-z._\/-]{0,80}$/;
+
+function safeRef(ref) {
+  var s = String(ref === null || ref === undefined ? '' : ref);
+  if (!REF_OK.test(s) || s.indexOf('..') !== -1) {
+    throw new Error(
+      'Tack will not pass "' + s + '" to git as a ref. A ref is letters, ' +
+      'digits, dot, dash, slash and underscore, and does not start with a ' +
+      'dash. The guard is safeRef() in tack.js.');
+  }
+  return s;
+}
+
+/* A whole number, for `-n` and `--days`. Same reasoning one size down: these
+ * are interpolated into an argument, so they are rebuilt from a parsed integer
+ * rather than passed through as text. */
+function safeCount(n, dflt, max) {
+  var v = parseInt(n, 10);
+  if (!isFinite(v) || v < 1) return dflt;
+  return Math.min(v, max);
 }
 
 /* ------------------------------------------------------------- discovery */
@@ -274,6 +318,174 @@ function rank(r) {
   if (r.loose)   return 0;
   if (r.empty)   return 1;
   return 2;
+}
+
+/* -------------------------------------------------------------- history */
+
+/* The sweep answers "what is loose". This answers "what happened", and the
+ * reason it is worth having is the same reason the sweep is: ten repos, and no
+ * vantage point from which their histories are visible at once. `git log`
+ * answers for the folder you are standing in. Nothing answers for the tree.
+ *
+ * It reads through the same choke point as everything else -- `log` has been
+ * on READ_ONLY_VERBS since pass 1, so this whole feature lives inside the tier
+ * that cannot write, and that list is still four verbs long. Diffs are
+ * `log -1 -p` rather than `git show` for exactly that reason: show would have
+ * been a fifth verb bought for something log already does. */
+
+var LOG_UNIT = '\x1f';   /* between fields */
+var LOG_REC  = '\x1e';   /* between commits -- a subject may contain newlines */
+
+/* Written by write.js into every commit Tack makes. Every commit in this tree
+ * is authored `RevBrd` whether a session or Trevor made it, so git's own author
+ * field cannot tell them apart and this trailer is the only thing that can.
+ * It is read as a fact about the message, never as a claim about intent. */
+var TACK_TRAILER = 'Committed with Tack.';
+
+var LOG_FORMAT = ['%H', '%h', '%ct', '%an', '%s', '%b'].join(LOG_UNIT) + LOG_REC;
+
+function parseLog(text) {
+  var out = [];
+  var recs = String(text).split(LOG_REC);
+  for (var i = 0; i < recs.length; i++) {
+    var rec = recs[i].replace(/^[\r\n]+/, '');
+    if (!rec.trim()) continue;
+    var f = rec.split(LOG_UNIT);
+    if (f.length < 5) continue;
+    /* The body is last and is joined back from whatever remains, so a message
+     * that happens to contain the unit separator cannot shift the fields
+     * before it. */
+    var body = f.slice(5).join(LOG_UNIT);
+    out.push({
+      hash:    f[0],
+      short:   f[1],
+      when:    (+f[2]) * 1000,
+      who:     f[3],
+      subject: f[4],
+      body:    body,
+      tack:    body.indexOf(TACK_TRAILER) !== -1
+    });
+  }
+  return out;
+}
+
+/* One repo's history. Returns the same shape whether it worked or not, so a
+ * repo that cannot be read is reported rather than silently missing -- same
+ * rule as a missing root and a dead circuit on the Mains panel. */
+function readLog(dir, opts) {
+  opts = opts || {};
+  var rec = { dir: dir, label: labelFor(dir), commits: [], empty: false, error: null };
+
+  var args = ['log', '--no-color', '-n', String(safeCount(opts.limit, 20, 500)),
+              '--format=' + LOG_FORMAT];
+  if (opts.days) args.push('--since=' + safeCount(opts.days, 7, 3650) + '.days.ago');
+  if (opts.ref)  args.push(safeRef(opts.ref));
+
+  var r = git(dir, args);
+  if (!r.ok) {
+    /* A repo with no commits fails `git log` with a message about a bad
+     * revision. That is a state, not a fault, and it gets its own word here
+     * for the same reason it does in the sweep. */
+    var head = git(dir, ['rev-parse', '--verify', 'HEAD']);
+    if (!head.ok) { rec.empty = true; return rec; }
+    rec.error = firstLine(r.err) || 'git log failed';
+    return rec;
+  }
+  rec.commits = parseLog(r.out);
+  return rec;
+}
+
+/* Every repo's history, merged into one stream, newest first.
+ *
+ * Built on sweepPaths rather than sweep: this reports history, so paying for
+ * `git status` on ten repos would be over a second spent on an answer that is
+ * never printed. Same call the back door makes, and for the same reason. */
+function sweepLog(cfgFile, now, opts) {
+  opts = opts || {};
+  var where = sweepPaths(cfgFile);
+  var want  = safeCount(opts.limit, 15, 500);
+
+  var repos = [], all = [];
+  for (var i = 0; i < where.repos.length; i++) {
+    var r = where.repos[i];
+    if (opts.only && r.label.toLowerCase().indexOf(opts.only.toLowerCase()) === -1) continue;
+    var got;
+    try { got = readLog(r.dir, { limit: want, days: opts.days }); }
+    catch (e) { got = { dir: r.dir, label: r.label, commits: [], empty: false,
+                        error: firstLine(e.message) }; }
+    repos.push(got);
+    for (var j = 0; j < got.commits.length; j++) {
+      got.commits[j].repo = got.label;
+      got.commits[j].dir  = got.dir;
+      all.push(got.commits[j]);
+    }
+  }
+
+  all.sort(function (a, b) { return b.when - a.when || a.repo.localeCompare(b.repo); });
+  var shown = all.slice(0, want);
+
+  /* `all.length` is not the tree's commit count -- it is what came back from
+   * asking each repo for `want`. So the only exact statement available is
+   * whether anything was left out, which is true if the pool overflowed or if
+   * any single repo filled its share and might have had more behind it. */
+  var truncated = all.length > shown.length || repos.some(function (r) {
+    return r.commits.length >= want; });
+
+  return {
+    now: now, only: opts.only || null, days: opts.days || null,
+    commits: shown, truncated: truncated,
+    repos: repos, missingRoots: where.missingRoots,
+    known: where.repos.map(function (r) { return r.label; }),
+    unknown: opts.only && !repos.length
+  };
+}
+
+/* Which repo holds this commit. Every repo is asked, and every repo that says
+ * yes is reported -- a four-character hash could honestly live in two of them,
+ * and opening the wrong commit looks exactly like it worked. Same rule the
+ * back door and the front door already follow. */
+function findCommit(cfgFile, ref) {
+  var where = sweepPaths(cfgFile);
+  var hits = [];
+  for (var i = 0; i < where.repos.length; i++) {
+    var r = where.repos[i];
+    var ok;
+    try { ok = git(r.dir, ['rev-parse', '--verify', '--quiet', safeRef(ref) + '^{commit}']); }
+    catch (e) { continue; }
+    if (ok.ok && ok.out.trim()) hits.push({ dir: r.dir, label: r.label, hash: ok.out.trim() });
+  }
+  return hits;
+}
+
+/* One commit, in full: its message, what it touched, and -- only if asked --
+ * the diff itself. `--stat` is the quick read and `-p` is the zoom. */
+function readCommit(dir, ref, opts) {
+  opts = opts || {};
+  var meta = readLog(dir, { limit: 1, ref: ref });
+  if (meta.error || !meta.commits.length) {
+    return { error: meta.error || 'no commit ' + ref, files: [], patch: null };
+  }
+  var c = meta.commits[0];
+  c.dir = dir;
+  c.label = labelFor(dir);
+
+  var st = git(dir, ['log', '-1', '--no-color', '--format=', '--numstat', safeRef(ref)]);
+  c.files = [];
+  if (st.ok) {
+    st.out.split('\n').forEach(function (line) {
+      var m = line.trim().match(/^(\d+|-)\t(\d+|-)\t(.+)$/);
+      if (!m) return;
+      c.files.push({ added: m[1], removed: m[2], path: m[3],
+                     binary: m[1] === '-' && m[2] === '-' });
+    });
+  }
+
+  c.patch = null;
+  if (opts.patch) {
+    var p = git(dir, ['log', '-1', '--no-color', '--format=', '-p', safeRef(ref)]);
+    if (p.ok) c.patch = p.out.replace(/\s+$/, '').split('\n');
+  }
+  return c;
 }
 
 /* ------------------------------------------------------------------ render */
@@ -660,11 +872,197 @@ function renderOne(s) {
 
 /* --------------------------------------------------------------------- cli */
 
+/* --------------------------------------------------------------- log view */
+
+/* The quick read: one line per commit, newest first, repo named on every line
+ * because the whole point is that they are mixed together. */
+function renderLog(s, opts) {
+  opts = opts || {};
+  var L = [''], now = s.now;
+
+  if (s.only && !s.repos.length) {
+    L.push('  ' + C.alert('no repo matching "' + s.only + '"'));
+    L.push('  ' + C.dim('known: ' + s.known.join(', ')));
+    L.push('  ' + C.dim('`tack log` on its own is every repo.'));
+    L.push('');
+    return L.map(trimEnd);
+  }
+
+  var n = s.commits.length;
+  var line1, line2;
+  if (!n) {
+    line1 = C.body('tack') + C.dim(' · ') + C.chrome('no commits' +
+            (s.days ? ' in the last ' + s.days + ' days' : '')) +
+            (s.only ? C.dim(' in ') + C.body(s.only) : '');
+    line2 = C.dim(s.days ? 'try a wider window: `tack log --days 30`'
+                         : 'nothing to show');
+  } else {
+    line1 = C.body('tack') + C.dim(' · ') + C.body(n + ' commit' + (n === 1 ? '' : 's')) +
+            C.dim(' in ') + C.body(matchedLabel(s));
+    line2 = C.dim('newest ') + C.body(ago(s.commits[0].when, now)) +
+            C.dim(' ago · oldest ') + C.body(ago(s.commits[n - 1].when, now)) +
+            C.dim(' ago');
+    if (s.days) line2 += C.dim('  ·  last ' + s.days + 'd');
+  }
+
+  headBlock(n ? 'pleased' : 'puzzled', line1, line2).forEach(function (x) { L.push(x); });
+  L.push('');
+
+  var w = Math.min(T.LABEL_MAX, s.commits.reduce(function (m, c) {
+    return Math.max(m, c.repo.length); }, 4));
+
+  for (var i = 0; i < s.commits.length; i++) {
+    var c = s.commits[i];
+    /* `you` rather than a name: the author field says RevBrd for every commit
+     * in this tree, so the honest thing to report is the one distinction that
+     * actually exists -- this message carries Tack's trailer, which means it
+     * was made from the pane rather than by a session. */
+    var mine = c.tack ? C.good(' you') : '    ';
+    L.push('  ' + C.dim(lpad(ago(c.when, now), 4)) + '  ' +
+           C.chrome(pad(clip(c.repo, T.LABEL_MAX), w)) + '  ' +
+           C.dim(c.short) + '  ' +
+           padVis(C.body(clip(c.subject, T.SUBJECT_MAX)), T.SUBJECT_MAX + 1) + mine);
+  }
+
+  if (s.truncated) {
+    L.push('');
+    L.push('  ' + C.dim('older commits not shown · `tack log -n ' +
+                        (s.commits.length * 2) + '`'));
+  }
+
+  for (var k = 0; k < s.repos.length; k++) {
+    if (s.repos[k].error) {
+      L.push('  ' + C.alert(s.repos[k].label + ': ' + s.repos[k].error));
+    }
+  }
+
+  L.push('');
+  if (n) L.push('  ' + C.dim('`tack log ' + s.commits[0].short +
+                             '` for one commit · add `-p` for the diff'));
+  L.push('');
+
+  for (var q = 0; q < s.missingRoots.length; q++) {
+    L.push('  ' + C.alert('root not found: ' + s.missingRoots[q]) +
+           C.dim('  (Tack/roots.json)'));
+    L.push('');
+  }
+  return L.map(trimEnd);
+}
+
+/* A short hash is short enough to honestly live in two repos. Same rule as
+ * everywhere else in this tool: say so, list them, resolve nothing. */
+function renderPickCommit(ref, hits) {
+  var L = ['', '  ' + C.warm(hits.length + ' repos have a commit ' + ref) , ''];
+  for (var i = 0; i < hits.length; i++) {
+    L.push('    ' + C.body(pad(hits[i].label, 24)) + C.dim(hits[i].hash.slice(0, 12)));
+  }
+  L.push('');
+  L.push('  ' + C.dim('use more of the hash, or name the repo: `tack log ' +
+                      hits[0].label.split('/').pop() + '`'));
+  L.push('');
+  return L.map(trimEnd);
+}
+
+/* What the filter actually landed on. With no filter it is a count, because
+ * naming ten repos in a header is not a header. */
+function matchedLabel(s) {
+  if (!s.only) return countRepos(s.commits) + ' repos';
+  var labels = s.repos.map(function (r) { return r.label; });
+  if (labels.length === 1) return labels[0];
+  return labels.length + ' repos matching "' + s.only + '"';
+}
+
+function countRepos(commits) {
+  var seen = {};
+  for (var i = 0; i < commits.length; i++) seen[commits[i].repo] = 1;
+  return Object.keys(seen).length;
+}
+
+/* The zoom: one commit. Which files, how much moved, and the diff if asked. */
+function renderCommit(c, now, opts) {
+  opts = opts || {};
+  var L = [''];
+
+  if (c.error) {
+    L.push('  ' + C.alert(c.error));
+    L.push('');
+    return L.map(trimEnd);
+  }
+
+  L.push('  ' + C.body(c.label) + C.dim('  ·  ') + C.chrome(c.short) +
+         C.dim('  ·  ' + ago(c.when, now) + ' ago') +
+         (c.tack ? C.dim('  ·  ') + C.good('yours') : C.dim('  ·  ' + c.who)));
+  L.push('');
+  L.push('  ' + C.body(c.subject));
+
+  /* The trailer is Tack's own bookkeeping and saying it back is noise -- the
+   * `yours` mark above already carries it. Anything else the message says is
+   * the point of reading a log at all, so it is printed in full. */
+  var body = (c.body || '').split('\n').filter(function (line) {
+    return line.trim() !== TACK_TRAILER; });
+  while (body.length && !body[0].trim()) body.shift();
+  while (body.length && !body[body.length - 1].trim()) body.pop();
+  if (body.length) {
+    L.push('');
+    body.forEach(function (line) { L.push('  ' + C.dim(line)); });
+  }
+  L.push('');
+
+  if (!c.files.length) {
+    L.push('  ' + C.chrome('no files changed'));
+  } else {
+    var w = c.files.reduce(function (m, f) {
+      return Math.max(m, Math.min(f.path.length, 52)); }, 4);
+    for (var i = 0; i < c.files.length; i++) {
+      var f = c.files[i];
+      var moved = f.binary ? C.chrome('binary')
+                : C.good('+' + f.added) + ' ' + C.alert('-' + f.removed);
+      L.push('    ' + C.body(pad(clip(f.path, 52), w)) + '  ' + moved);
+    }
+  }
+  L.push('');
+
+  if (c.patch) {
+    var lines = c.patch;
+    var cap = T.PATCH_MAX;
+    for (var j = 0; j < Math.min(lines.length, cap); j++) {
+      L.push('  ' + paintDiff(lines[j]));
+    }
+    if (lines.length > cap) {
+      L.push('');
+      /* Counted, never quietly truncated. And the way to see the rest is git
+       * itself, spelled out -- this tool exists to be outgrown. */
+      L.push('  ' + C.dim((lines.length - cap) + ' more lines. All of it:'));
+      L.push('  ' + C.chrome('git -C "' + c.dir + '" show ' + c.short));
+    }
+    L.push('');
+  } else if (c.files.length) {
+    L.push('  ' + C.dim('`tack log ' + c.short + ' -p` for the diff'));
+    L.push('');
+  }
+  return L.map(trimEnd);
+}
+
+/* git's own colours are off (--no-color) so that what Tack parses is what git
+ * printed. Painting it here instead keeps one palette across the whole tool. */
+function paintDiff(line) {
+  var s = String(line);
+  if (/^diff --git |^index |^--- |^\+\+\+ |^new file|^deleted file|^similarity|^rename /.test(s))
+    return C.chrome(s);
+  if (s.charAt(0) === '@') return C.live(s);
+  if (s.charAt(0) === '+') return C.good(s);
+  if (s.charAt(0) === '-') return C.alert(s);
+  return C.dim(s);
+}
+
 var HELP = [
   '',
   '  tack            what is loose, everywhere',
   '  tack show NAME  the file list for one repo (substring match)',
   '  tack sit [NAME] the live pane -- pick files and commit them',
+  '  tack log        what happened, everywhere, newest first',
+  '  tack log NAME   the history of one repo',
+  '  tack log HASH   one commit: what it touched. add -p for the diff',
   '  tack one        a single line, for a status bar',
   '  tack faces      every shape of him, in every mood',
   '  tack attic      everything Tack has ever thrown away, and where it is',
@@ -674,6 +1072,9 @@ var HELP = [
   '  --no-color      plain text',
   '  --shape=NAME    plain | bat | batlite | ascii  (see `tack faces`)',
   '  --dry           with open: say what it would open, and do not open it',
+  '  -n N            with log: how many commits (default ' + T.LOG_LINES + ')',
+  '  --days N        with log: only the last N days',
+  '  -p              with log HASH: the diff itself',
   '',
   '  Tack stages only paths it has shown you -- `git add -A` is not a thing',
   '  it declines, it is a thing it cannot express. Discarding a change always',
@@ -681,6 +1082,74 @@ var HELP = [
   '  untracked file at all.',
   ''
 ].join('\n');
+
+/* Argument handling for `tack log`, kept out of main() so the suite can drive
+ * the whole command without a terminal -- the same reason sit.js holds no I/O
+ * of its own. Everything numeric goes through safeCount, and everything that
+ * reaches git as a ref goes through safeRef. */
+function parseLogArgs(argv) {
+  var opt = { patch: false, limit: T.LOG_LINES, days: null, words: [], bad: null };
+  for (var i = 0; i < argv.length; i++) {
+    var a = argv[i], m;
+    if (a === '-p' || a === '--patch') { opt.patch = true; continue; }
+    if (a === '-n' || a === '--number') { opt.limit = safeCount(argv[++i], T.LOG_LINES, 500); continue; }
+    if ((m = a.match(/^-n(\d+)$/)) || (m = a.match(/^--number=(\d+)$/))) {
+      opt.limit = safeCount(m[1], T.LOG_LINES, 500); continue; }
+    if (a === '--days') { opt.days = safeCount(argv[++i], 7, 3650); continue; }
+    if ((m = a.match(/^--days=(\d+)$/))) { opt.days = safeCount(m[1], 7, 3650); continue; }
+    /* An unknown option is refused rather than kept as a name. It would
+     * otherwise become a search term and quietly report finding nothing. */
+    if (a.charAt(0) === '-') { opt.bad = a; return opt; }
+    opt.words.push(a);
+  }
+  return opt;
+}
+
+/* A hash, or the name of a repo? Decided by shape first and then by whether any
+ * repo actually holds it -- never by guessing, and a thing that is held by two
+ * repos is reported as two rather than resolved. */
+function looksLikeRef(words) {
+  return words.length === 1 && /^[0-9a-fA-F]{4,40}$/.test(words[0]);
+}
+
+function runLog(cfgFile, argv) {
+  var opt = parseLogArgs(argv);
+  if (opt.bad) {
+    process.stdout.write('\n  tack log does not know ' + opt.bad + '\n' + HELP + '\n');
+    return 1;
+  }
+  var now = Date.now();
+  var target = opt.words.join(' ');
+
+  if (looksLikeRef(opt.words)) {
+    var hits;
+    try { hits = findCommit(cfgFile, target); }
+    catch (e) { process.stderr.write('\n  tack: ' + e.message + '\n\n'); return 1; }
+
+    if (hits.length > 1) {
+      process.stdout.write(renderPickCommit(target, hits).join('\n') + '\n');
+      return 1;
+    }
+    if (hits.length === 1) {
+      var c;
+      try { c = readCommit(hits[0].dir, target, { patch: opt.patch }); }
+      catch (e2) { process.stderr.write('\n  tack: ' + e2.message + '\n\n'); return 1; }
+      process.stdout.write(renderCommit(c, now, opt).join('\n') + '\n');
+      return c.error ? 1 : 0;
+    }
+    /* Shaped like a hash and held by nobody. Falling through to the repo-name
+     * path here would answer a question that was not asked. */
+    process.stdout.write('\n  ' + C.alert('no commit ' + target + ' in any repo') +
+                         '\n  ' + C.dim('`tack log` is everything, newest first.') + '\n\n');
+    return 1;
+  }
+
+  var sl;
+  try { sl = sweepLog(cfgFile, now, { limit: opt.limit, days: opt.days, only: target || null }); }
+  catch (e3) { process.stderr.write('\n  tack: ' + e3.message + '\n\n'); return 1; }
+  process.stdout.write(renderLog(sl, opt).join('\n') + '\n');
+  return (target && !sl.repos.length) ? 1 : 0;
+}
 
 function main(argv) {
   var args = argv.slice(2);
@@ -737,6 +1206,13 @@ function main(argv) {
     return out.code;
   }
 
+  /* Above the sweep for the same reason `open` is: this reports history, so
+   * paying for `git status` across ten repos would be a second spent on an
+   * answer that is never printed. */
+  if (args[0] === 'log') {
+    return runLog(cfgFile, args.slice(1), dryRun);
+  }
+
   var s;
   try { s = sweep(cfgFile, Date.now()); }
   catch (e) {
@@ -773,12 +1249,18 @@ function main(argv) {
 
 module.exports = {
   T: T, READ_ONLY_VERBS: READ_ONLY_VERBS, git: git,
+  safeRef: safeRef, safeCount: safeCount, parseLog: parseLog, readLog: readLog,
+  sweepLog: sweepLog, findCommit: findCommit, readCommit: readCommit,
+  parseLogArgs: parseLogArgs, looksLikeRef: looksLikeRef, runLog: runLog,
+  renderLog: renderLog, renderCommit: renderCommit, renderPickCommit: renderPickCommit,
+  matchedLabel: matchedLabel,
+  paintDiff: paintDiff, countRepos: countRepos, TACK_TRAILER: TACK_TRAILER,
   parseStatusV2: parseStatusV2, describe: describe, findRepos: findRepos,
   discover: discover, loadRoots: loadRoots, expandHome: expandHome,
   labelFor: labelFor, readRepo: readRepo, sweep: sweep, sweepPaths: sweepPaths, rank: rank,
   render: render, renderShow: renderShow, renderAttic: renderAttic, renderOpen: renderOpen, expandMatches: expandMatches, trimEnd: trimEnd, renderOne: renderOne, previewOf: previewOf,
   creature: creature, headBlock: headBlock, SHAPES: SHAPES, renderFaces: renderFaces,
-  moodOf: moodOf, ago: ago, visLen: visLen, padVis: padVis, C: C,
+  moodOf: moodOf, ago: ago, visLen: visLen, padVis: padVis, lpad: lpad, C: C,
   main: main
 };
 
