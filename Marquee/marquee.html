@@ -867,6 +867,9 @@ function marqueeBoot() {
     document.body.style.overflow = 'hidden';
     stopIdle();
     setBoard(g.display);
+    // The window title is the page's to set, and Electron follows it, so the
+    // shell says what is playing without knowing anything about the catalog.
+    document.title = 'MARQUEE — ' + g.display;
     // Focus the frame element so the keyboard reaches the work without a click
     // first. contentWindow.focus() would be better and is unreachable across
     // the opaque origin — this is the available half.
@@ -884,11 +887,29 @@ function marqueeBoot() {
     // Blanking the src actually tears it down. Leaving it loaded keeps its
     // audio playing and its rAF loop burning behind the lobby.
     frame.src = 'about:blank';
+    document.title = 'MARQUEE';
     document.body.style.overflow = '';
     q.focus();
     startIdle();
   }
   document.getElementById('back').addEventListener('click', stop);
+
+  // The shell says WHEN to go back; this page decides what that means. It is
+  // an event rather than a call into these internals, so how a work is left
+  // can change here without electron/main.js knowing. On batteries nothing
+  // ever dispatches it and this listener costs nothing.
+  window.addEventListener('marquee:back', function () {
+    if (stage.classList.contains('on')) stop();
+  });
+
+  // In the Electron shell the main process sees keys the page cannot --
+  // measured, not assumed -- so the bezel's note about Esc becomes untrue and
+  // corrects itself. Saying `esc esc` on batteries would advertise a gesture
+  // that genuinely cannot work there.
+  if (/\bElectron\//.test(navigator.userAgent)) {
+    var bn = document.getElementById('barnote');
+    if (bn) bn.innerHTML = 'Press <b>Esc</b> twice, or Alt+&larr;, to come back.';
+  }
 
   // ----- keyboard ---------------------------------------------------------
   // Only ever heard while the lobby has focus. Once a work is running the

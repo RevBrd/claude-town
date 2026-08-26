@@ -80,6 +80,9 @@ Marquee/
   tools/frontdoor.js fixture assertions + mutation suite (marquee.js)
   tools/smoke.js     does the page boot and draw the manifest? (file://, on batteries)
   tools/agree.js     do the two readers agree? (http://, on the mains)
+  tools/shell.js     the Electron runtime: keys, roots, a real window (skips if absent)
+  electron/main.js   the shell — Escape past the origin boundary, and a way out
+  Marquee.bat        double-click: the shell
   manifest.json      generated; the join, as data
   manifest.js        generated; the same thing as a <script src>-able global
 ```
@@ -207,6 +210,10 @@ node tools/smoke.js
 
 ```bash
 node tools/agree.js
+```
+
+```bash
+node tools/shell.js
 ```
 
 `--json` dumps the manifest to stdout, `--games <path>` points at a different tree, `--strict`
@@ -378,6 +385,11 @@ All verified in headless Chrome on 17 Aug 2026, not assumed — each one changed
 - **`postMessage` works child→parent** (origin `"null"`). Unused, but it's the one channel that
   exists if a game ever wants to tell the shell something.
 
+One more, measured in Electron on 25 Aug 2026 and the reason the runtime was worth building:
+**the main process sees keys the page cannot.** With the iframe holding focus,
+`before-input-event` saw the keypress and the page's own listener recorded zero. The origin
+boundary is a boundary between two *renderers*; it is not one the browser process is behind.
+
 ## Billing is editorial, and that is the point
 
 `billing` decides which shelf a game lands on — **Feature presentation**, **Now showing**
@@ -403,11 +415,130 @@ game still needs no curation at all.
    second reader over [Mains](../Mains/), so on the mains the page derives from the actual tree
    and the stale-until-someone-runs-node window is closed. On batteries nothing changed at all,
    which `smoke.js` still proves by passing unmodified.
-5. **Runtime** *(if it happens)* — Electron over Tauri. Electron *is* the Chrome that `probe.js`
-   already validates against, so "works in the harness" and "works in the shell" stay one claim
-   rather than two. Buys a custom scheme per game — real origin isolation, which the filesystem
-   cannot give, because every `file://` page in the collection currently shares one localStorage
-   bucket under origin `null`. Verified empirically, not assumed.
+5. **Runtime** — done in two passes. Step 1 (24 Aug 2026) opened `marquee.html` in a real window
+   and stopped at a clean boundary. Step 2 (25 Aug 2026) made it earn its keep: **Escape works**
+   from inside a running work, which on `file://` it cannot; the window says what is playing; and
+   the shell cannot be navigated out of the collection. Electron over Tauri, because Electron *is*
+   the Chrome `smoke.js` already validates against, so "works in the harness" and "works in the
+   shell" stay one claim rather than two.
+6. **Origin isolation** *(deferred, deliberately)* — a custom scheme per work, giving each a real
+   origin instead of the single `null` bucket every `file://` page shares. Still the right
+   destination. Not done, because a new origin is an **empty** `localStorage` and six works keep
+   real saves in it; the migration is that pass's first design problem rather than a discovery
+   half-way through it. See *The runtime, and what it is not doing yet*.
+
+## The runtime, and what it is not doing yet
+
+```
+Marquee.bat            double-click
+node_modules\electron\dist\electron.exe .
+```
+
+Electron over Tauri, for the reason the roadmap gave: Electron **is** the Chrome that `smoke.js`
+already validates against, so "works in the harness" and "works in the shell" stay one claim
+rather than two. `npm install` in this folder once; `node_modules/` is gitignored and batteries
+mode has no dependency on any of it.
+
+### What the shell buys
+
+**Escape works.** This is the whole reason it exists. On `file://` the launcher stops receiving
+keys the moment a work has focus — both sides are opaque origin `null` — which is why the bezel
+carries a visible Back button and why it folds rather than hides. In the shell the *main process*
+sees the key before the page does, and the origin boundary is irrelevant to it.
+
+Measured on 25 Aug 2026 rather than assumed, in the same spirit as the `file://` boundary above:
+with the iframe holding focus, `before-input-event` saw the keypress and the page's own listener
+recorded **zero**. Both halves of that are asserted in `tools/shell.js` against a real window.
+
+**The first Escape is passed through on purpose.** Taking it outright would take a key away from
+every work in the collection, and Escape is what a game uses for its own pause menu. So the first
+press reaches the work exactly as it does today, and only a **second press within 700ms** is
+intercepted. Nothing in the collection can consume that gesture, and nothing lost a key it had.
+`Alt+←` does the same thing on the first press, because no work uses it.
+
+The bezel's note — which on batteries reads *"Esc won't work once the work has focus"* — rewrites
+itself in the shell, because in the shell that sentence is false. The page detects Electron from
+the user agent. Advertising `esc esc` on batteries would be offering a gesture that genuinely
+cannot work there.
+
+**The window says what is playing.** The page owns `document.title` and Electron follows it, so
+the shell reports the catalog without knowing anything about it.
+
+**It cannot be navigated out of the collection.** There is no address bar, no reload and no tabs,
+so a top-level navigation anywhere else is a dead end with no way back. `will-navigate` allows
+only paths inside the venue roots, and `setWindowOpenHandler` sends `http(s)` to the real browser
+— where there *is* a back button — and denies everything else.
+
+**The allowed roots come from `venue.json`**, the same floor plan the derivation reads. A second
+copy of where the works live would drift, and the copy nobody reads is the one that goes stale. A
+wing added to the floor plan is reachable in the shell with no edit to `electron/main.js`, and
+that is asserted per wing rather than claimed.
+
+### What it is deliberately not doing: origin isolation
+
+The roadmap's step 5 was a custom scheme per work, giving each a real origin instead of the single
+`null` bucket every `file://` page shares. **That is still the right destination and it was
+deferred, with a reason.**
+
+Six works keep real saves in `localStorage` — Asterism, Asterism Expanded, DRIFT, Nebula Strike,
+Shadowless, Snek. A new origin is a new, **empty** `localStorage`. Those saves would not be
+deleted; they would become unreachable, which to whoever set the high score is the same thing.
+This file already lists *"an iframed game reads the same saves as a double-clicked one"* as a
+measured virtue, and origin isolation trades exactly that away.
+
+So the migration is the first design problem of that pass, not an afterthought discovered
+half-way through it. Two things worth knowing before starting:
+
+- **The same split may already exist on the mains.** `http://127.0.0.1:12060` is a different
+  origin from `file://`, so a work played through Mains and the same work double-clicked are
+  probably writing to two separate buckets already. Neither this file nor Mains' mentions it. It
+  has not been measured — do that first, because if it is true then the collection has *already*
+  quietly split saves in two and the migration has more than one source to reconcile.
+- **The problem origin isolation fixes is real but has never fired.** Every `file://` page shares
+  one bucket, so a key written by one work is readable by all of them; today that is held together
+  purely by everyone having picked distinct key names. It is fragile in principle and has not once
+  been observed to collide.
+
+### Two things this pass got wrong, both worth keeping
+
+**`require.main === module` is not an Electron entry guard.** It was added so the suite could
+`require` the file without starting an app, it is false when Electron loads the entry, and for one
+pass the real shell created **no window at all** while the suite stayed green — because the suite
+called `createWindow()` itself and never went near the startup path. Caught by looking for the
+window rather than reasoning about it: `Get-Process`, `MainWindowTitle`, empty.
+
+Both halves of the fix matter. The guard is now `if (electron.app)` — under plain node
+`require('electron')` is a *string*, so nothing starts, and under Electron it always starts,
+including for the suite. And the suite now takes the window the shell made rather than making its
+own, so it drives the same startup a double-click does.
+
+The general form: **a suite that constructs the thing under test has not tested how the thing gets
+constructed**, and that gap is invisible from inside the suite.
+
+**One clock, always.** The key handler read `input.timeStamp || Date.now()`. Electron's
+`before-input-event` carries no timestamp, so that looked like a harmless fallback and was really
+a standing invitation to subtract two different clocks if one ever appeared — and a delta between
+two clocks is nonsense in whichever direction it lands.
+
+### Testing
+
+```bash
+node tools/shell.js
+```
+
+36 pure assertions and 11 live ones. **One file, two runtimes**: run under node it asserts the
+pure decisions — what a key means, which roots are allowed, containment, file-url parsing — and
+then re-runs *itself* under Electron for the live half, which drives a real window. Two files
+would have had to agree about what they were testing, which is the same shape of problem as two
+catalogs.
+
+It **skips and exits 0** when Electron is not installed. `node_modules/` is gitignored, batteries
+mode does not need it, and a suite that failed for a missing optional component would be lying
+about what is broken. Same rule as `agree.js`.
+
+`decide()` is pure and separate from the event handler on purpose — given the last Escape time and
+this key, what happens? — so the whole gesture is testable without a window, and the live half is
+left to prove only the things that genuinely need one.
 
 ## The house
 
@@ -535,6 +666,16 @@ The terminal front door — `marquee.js`, `marquee.cmd`, `tools/frontdoor.js` �
 proposed for [Tack](../Tack/) and moved here instead: Tack's vocabulary is closed to git on
 purpose, and the thing that knows what is playing should be the thing that opens it. Sharing
 `derive.js` is what makes a second front door safe rather than a second catalog.
+
+The runtime — `electron/main.js`, `package.json`, `Marquee.bat` — begun by **CTown 7**
+(Opus 4.7), 24 Aug 2026: a bare shell that opened the page in a real window, with a header
+saying exactly what was and was not in scope, stopped at a clean boundary. Step 2 built
+straight on top of it without undoing anything, which is the compliment a first pass wants.
+
+Step 2 — Escape past the origin boundary, the navigation guard, the venue-derived roots, and
+`tools/shell.js` — by **CTown 8** (Opus 5), 25 Aug 2026. Trevor's call to defer origin
+isolation rather than take it next, once the six works with real saves in `localStorage` were
+counted; the roadmap had it as the next step and the saves are the reason it is not.
 
 The live catalog — the I/O seam in `derive.js`, `tools/live.js`, `tools/agree.js`, and the prelude
 in `marquee.html` — by **CTown-5** (Opus 5), 20 Aug 2026. The seam was proven inert before the
