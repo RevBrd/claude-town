@@ -41,6 +41,8 @@ var PAGE = path.join(HERE, '..', 'marquee.html');
 /* ------------------------------------------------------------------ tuning */
 var T = {
   DOUBLE_MS: 700,   // how long the second Escape has to arrive
+  ZOOM_MIN:   -3,   // about half size
+  ZOOM_MAX:    4,   // about three times
   WIDTH:    1280,
   HEIGHT:    860
 };
@@ -133,6 +135,16 @@ function decide(input, lastEscape, now, doubleMs) {
   if (input.key === 'ArrowLeft' && input.alt && !input.control && !input.meta) {
     return { action: 'back', lastEscape: 0 };
   }
+  /* The window's own keys. F11 is the browser's fullscreen key rather than
+   * anything a game reaches for, and the zoom trio is Ctrl-modified, so neither
+   * takes a key off a work the way a bare Escape would. */
+  if (input.key === 'F11') return { action: 'fullscreen', lastEscape: lastEscape };
+  if (input.control && !input.alt && !input.meta) {
+    if (input.key === '=' || input.key === '+') return { action: 'zoom-in',  lastEscape: lastEscape };
+    if (input.key === '-' || input.key === '_') return { action: 'zoom-out', lastEscape: lastEscape };
+    if (input.key === '0')                      return { action: 'zoom-reset', lastEscape: lastEscape };
+  }
+
   if (input.key !== 'Escape') return { action: 'pass', lastEscape: lastEscape };
 
   /* THE FIRST ESCAPE IS LET THROUGH ON PURPOSE. Taking it outright would take a
@@ -146,22 +158,92 @@ function decide(input, lastEscape, now, doubleMs) {
   return { action: 'pass', lastEscape: now };
 }
 
+/* --------------------------------------------------- where the window was */
+
+/* Kept in Electron's userData folder, NOT in this repo. It is a fact about one
+ * person's monitors on one machine — committing it would put a second author's
+ * window position into everybody's checkout, and Tack would report it as loose
+ * work after every single run. */
+function stateFile() {
+  try { return path.join(app.getPath('userData'), 'window.json'); }
+  catch (e) { return null; }
+}
+
+function readBounds() {
+  var f = stateFile();
+  if (!f) return null;
+  try {
+    var b = JSON.parse(fs.readFileSync(f, 'utf8'));
+    return usableBounds(b, electron.screen.getAllDisplays().map(function (d) { return d.workArea; }));
+  } catch (e) { return null; }
+}
+
+/* A REMEMBERED POSITION IS NOT AUTOMATICALLY A REACHABLE ONE. Unplug the second
+ * monitor and last night's window is off the edge of the world, opening
+ * somewhere the mouse cannot go — which looks exactly like the app failing to
+ * start. So the saved rectangle has to overlap some display that exists now,
+ * and anything else falls back to the default. Pure, so it is asserted without
+ * a second monitor to hand. */
+function usableBounds(b, areas) {
+  if (!b || typeof b.width !== 'number' || typeof b.height !== 'number') return null;
+  if (b.width < 480 || b.height < 360) return null;
+  if (typeof b.x !== 'number' || typeof b.y !== 'number') return null;
+
+  var VISIBLE = 80;   /* px of the window that must land on a real display */
+  var ok = (areas || []).some(function (a) {
+    var overlapX = Math.min(b.x + b.width,  a.x + a.width)  - Math.max(b.x, a.x);
+    var overlapY = Math.min(b.y + b.height, a.y + a.height) - Math.max(b.y, a.y);
+    return overlapX >= VISIBLE && overlapY >= VISIBLE;
+  });
+  return ok ? b : null;
+}
+
+function saveBounds(win) {
+  var f = stateFile();
+  if (!f || win.isDestroyed()) return;
+  try {
+    /* Never the fullscreen or maximised rectangle — restoring into fullscreen
+     * with no menu bar and no title bar is a room with the door painted over. */
+    if (win.isFullScreen() || win.isMaximized()) return;
+    fs.writeFileSync(f, JSON.stringify(win.getNormalBounds()));
+  } catch (e) { /* a window position is not worth an error dialog */ }
+}
+
 /* ------------------------------------------------------------------ window */
 
 function createWindow() {
   var roots = allowedRoots();
+  var saved = readBounds();
 
-  var win = new BrowserWindow({
+  var opts = {
     width: T.WIDTH,
     height: T.HEIGHT,
+    minWidth: 480,
+    minHeight: 360,
     title: 'Marquee',
+    icon: path.join(HERE, '..', 'marquee.ico'),
     autoHideMenuBar: true,
-    backgroundColor: '#111',
+    backgroundColor: '#0a0910',   /* --night, so the frame does not flash grey */
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
     },
-  });
+  };
+  if (saved) {
+    opts.x = saved.x; opts.y = saved.y;
+    opts.width = saved.width; opts.height = saved.height;
+  }
+
+  var win = new BrowserWindow(opts);
+
+  var saveT = null;
+  function rememberSoon() {
+    clearTimeout(saveT);
+    saveT = setTimeout(function () { saveBounds(win); }, 400);
+  }
+  win.on('resize', rememberSoon);
+  win.on('move', rememberSoon);
+  win.on('close', function () { clearTimeout(saveT); saveBounds(win); });
 
   /* ---- Escape, twice ------------------------------------------------------
    * The one thing this shell exists to fix. On file:// the launcher stops
@@ -178,7 +260,20 @@ function createWindow() {
      * different clocks is nonsense in whichever direction it lands. */
     var d = decide(input, lastEscape, Date.now(), T.DOUBLE_MS);
     lastEscape = d.lastEscape;
-    if (d.action === 'back') { event.preventDefault(); back(win); }
+    if (d.action === 'pass') return;
+    event.preventDefault();
+
+    if (d.action === 'back') { back(win); return; }
+    if (d.action === 'fullscreen') { win.setFullScreen(!win.isFullScreen()); return; }
+
+    /* Zoom is the window's, not the page's, so it scales a running work along
+     * with the lobby — which is the point on a large monitor. Clamped, because
+     * a zoom level nobody can read is a window nobody can fix without deleting
+     * a file they do not know about. */
+    var wc = win.webContents, z = wc.getZoomLevel();
+    if (d.action === 'zoom-in')    wc.setZoomLevel(Math.min(z + 0.5, T.ZOOM_MAX));
+    if (d.action === 'zoom-out')   wc.setZoomLevel(Math.max(z - 0.5, T.ZOOM_MIN));
+    if (d.action === 'zoom-reset') wc.setZoomLevel(0);
   });
 
   /* ---- the shell cannot be navigated out of the collection -----------------
@@ -243,6 +338,7 @@ if (electron.app) {
 
 module.exports = {
   T: T, out: out, allowedRoots: allowedRoots, isInside: isInside,
+  usableBounds: usableBounds, stateFile: stateFile,
   fileUrlToPath: fileUrlToPath, decide: decide, openPolicy: openPolicy,
   createWindow: createWindow
 };

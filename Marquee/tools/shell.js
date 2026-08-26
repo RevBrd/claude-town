@@ -90,6 +90,62 @@ function pureSuite() {
   eq(M.decide(K('a'), 1234, 1300, 700).lastEscape, 1234,
      'an unrelated key does not clear a pending Escape');
 
+  section('the window’s own keys');
+
+  eq(M.decide(K('F11'), 0, 1000, 700).action, 'fullscreen', 'F11 toggles fullscreen');
+  eq(M.decide(K('F11'), 1234, 1000, 700).lastEscape, 1234,
+     'and does not disturb a pending Escape');
+
+  eq(M.decide(K('=', { control: true }), 0, 1000, 700).action, 'zoom-in', 'Ctrl+= zooms in');
+  eq(M.decide(K('+', { control: true }), 0, 1000, 700).action, 'zoom-in', 'and so does Ctrl++');
+  eq(M.decide(K('-', { control: true }), 0, 1000, 700).action, 'zoom-out', 'Ctrl+- zooms out');
+  eq(M.decide(K('0', { control: true }), 0, 1000, 700).action, 'zoom-reset', 'Ctrl+0 resets it');
+
+  /* Without Ctrl these are ordinary keys a work may well be using — a game
+   * where you cannot type a minus sign would be a strange thing to ship. */
+  ['=', '-', '0', '+'].forEach(function (k) {
+    eq(M.decide(K(k), 0, 1000, 700).action, 'pass',
+       'a bare ' + k + ' belongs to the work');
+  });
+  eq(M.decide(K('-', { control: true, alt: true }), 0, 1000, 700).action, 'pass',
+     'and Ctrl+Alt+- is somebody else');
+
+  section('where the window was');
+
+  /* A REMEMBERED POSITION IS NOT AUTOMATICALLY A REACHABLE ONE. Unplug the
+   * second monitor and last night's window is off the edge of the world,
+   * opening somewhere the mouse cannot reach — which looks exactly like the app
+   * failing to start rather than like a stale rectangle. */
+  var screen1 = [{ x: 0, y: 0, width: 1920, height: 1040 }];
+  var two     = [{ x: 0, y: 0, width: 1920, height: 1040 },
+                 { x: 1920, y: 0, width: 1920, height: 1040 }];
+
+  var onMain = { x: 100, y: 100, width: 1280, height: 860 };
+  eq(M.usableBounds(onMain, screen1), onMain, 'a window on the main display is kept');
+
+  var onSecond = { x: 2000, y: 120, width: 1280, height: 860 };
+  eq(M.usableBounds(onSecond, two), onSecond, 'and one on a second display, while it exists');
+  eq(M.usableBounds(onSecond, screen1), null, 'but not once that display is gone');
+
+  eq(M.usableBounds({ x: -4000, y: 0, width: 1280, height: 860 }, screen1), null,
+     'nor one off the left edge of the world');
+  eq(M.usableBounds({ x: 1900, y: 1000, width: 1280, height: 860 }, screen1), null,
+     'nor one hanging off by all but a corner');
+
+  eq(M.usableBounds(null, screen1), null, 'nothing saved is not a position');
+  eq(M.usableBounds({}, screen1), null, 'and neither is a truncated file');
+  eq(M.usableBounds({ x: 0, y: 0, width: 20, height: 20 }, screen1), null,
+     'a window too small to hold the lobby is refused');
+  eq(M.usableBounds({ x: 0, y: 0, width: 1280, height: 860 }, []), null,
+     'and with no displays at all, nothing is reachable');
+
+  /* It must not live in the repo: it is one person's monitors, it would be a
+   * second author's window position in everybody's checkout, and Tack would
+   * report it as loose work after every single run. */
+  var sf = M.stateFile();
+  ok(sf === null || path.resolve(sf).indexOf(path.resolve(ROOT)) !== 0,
+     'the remembered position is stored outside the repo');
+
   section('what a work may open');
 
   /* Pure, so these cost nothing and open nothing. The live half then proves
