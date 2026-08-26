@@ -83,6 +83,7 @@ Marquee/
   tools/shell.js     the Electron runtime: keys, roots, a real window (skips if absent)
   electron/main.js   the shell — Escape past the origin boundary, and a way out
   Marquee.bat        double-click: the shell
+  Test.bat           double-click: every suite, and the window stays open
   manifest.json      generated; the join, as data
   manifest.js        generated; the same thing as a <script src>-able global
 ```
@@ -312,6 +313,19 @@ direction of *looks like it worked* does not get guessed. It gets declared, or i
 games, the answer is twenty-three one-line declarations, not a cleverer regex.
 
 ## Testing
+
+**Double-click `Test.bat`.** It runs all five suites in order and pauses so the result can be
+read.
+
+It exists because of a Windows hazard that is genuinely not obvious: **a `.js` file cannot be
+double-clicked.** Windows hands it to Windows Script Host, which is not node and understands
+none of this, and the failure is `Invalid character`, line 1, char 1 — which reads exactly like
+a corrupt file rather than like the wrong program having opened it.
+
+That is the same hazard [Tack](../Tack/)'s back door is built around: `tack open shell.js` opens
+it in an editor and says why, precisely because handing it to the shell would *run* it. So Tack
+is the safe way to **read** one of these, and `Test.bat` is the way to **run** them. Neither is a
+double-click on the `.js` itself, and the file manager gives no hint of that.
 
 44 assertions. `selftest.js` asserts against a **synthetic fixture**, not against `Projects/Games/`. Testing the
 live collection was the first design and it was wrong: every assertion would encode a fact about
