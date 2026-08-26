@@ -1074,6 +1074,15 @@ function suite(TK, W, SIT, U, O) {
   eq(TK.safeCount('9999', 15, 500), 500, 'and clamps to the maximum');
   eq(TK.safeCount('7; rm -rf /', 15, 500), 7, 'and yields an integer, never text');
 
+  /* `ago()` returns 'now' under a minute, so every caller that appended ' ago'
+   * printed `now ago`. The suffix belongs in the phrase, not the value. */
+  eq(TK.agoPhrase(Date.now(), Date.now()), 'just now', 'under a minute reads as just now');
+  eq(TK.agoPhrase(Date.now() - 3600000, Date.now()), '1h ago', 'and an hour reads as 1h ago');
+  ok(TK.renderCommit({ label: 'x', short: 'abc', when: Date.now(), who: 'T',
+                       tack: false, subject: 's', body: '', dir: 'd', files: [], patch: null },
+                     Date.now(), {}).join(' ').indexOf('now ago') === -1,
+     'and a commit made this minute never says "now ago"');
+
   section('parsing a log');
 
   var U1 = '\x1f', R1 = '\x1e';
@@ -1799,6 +1808,12 @@ var MUTANTS_LOG = [
 
 /* The pane's two reading views. Both are one `return true` away from letting
  * a key that stages or discards through, which is the thing to keep proving. */
+var MUTANTS_AGO = [
+  ['"now ago" comes back',
+   "  return a === 'now' ? 'just now' : a + ' ago';",
+   "  return a + ' ago';"]
+].map(function (m) { return { file: 'tack.js', name: m[0], from: m[1], to: m[2] }; });
+
 var MUTANTS_SITLOG = [
   ['the history view falls through to the keys that pick and commit',
    "  if (v === 'history') {",
@@ -1829,7 +1844,8 @@ var MUTANTS_SITLOG = [
    "    var cbody = (cm.body || '').split('\\n');"]
 ].map(function (m) { return { file: 'sit.js', name: m[0], from: m[1], to: m[2] }; });
 MUTANTS = MUTANTS.concat(MUTANTS_WRITE, MUTANTS_SIT, MUTANTS_UNDO, MUTANTS_SIT2,
-                         MUTANTS_OPEN, MUTANTS_TACK2, MUTANTS_LOG, MUTANTS_SITLOG);
+                         MUTANTS_OPEN, MUTANTS_TACK2, MUTANTS_LOG, MUTANTS_SITLOG,
+                         MUTANTS_AGO);
 
 var SOURCES = {
   'tack.js':  fs.readFileSync(path.join(ROOT, 'tack.js'),  'utf8'),

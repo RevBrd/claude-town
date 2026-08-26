@@ -390,7 +390,7 @@ Tack/
   tack.cmd           the shim, so it is one word instead of a path
   Look.bat           double-click: the glance
   Sit.bat            double-click: the pane
-  tools/selftest.js  497 assertions + 107 mutants across all five files
+  tools/selftest.js  500 assertions + 108 mutants across all five files
 ```
 
 The split is the security model, not tidiness. `tack.js` runs on every glance and has no
@@ -574,8 +574,8 @@ folder** rather than `log.js` by name, which removes a judgement call from a gua
 have one; and **leaving `git add -A` out entirely** rather than building it behind a warning, asked
 for the moment he understood what it did.
 
-The history -- `tack log`, `safeRef`, the pane's two reading views, and 136 more assertions with
-29 more mutants -- by **CTown 8** (Opus 5), 25 Aug 2026. Trevor asked for a way to read commit
+The history -- `tack log`, `safeRef`, the pane's two reading views, and 139 more assertions with
+30 more mutants -- by **CTown 8** (Opus 5), 25 Aug 2026. Trevor asked for a way to read commit
 logs and wanted both the whole tree and one repo at a time; the three zoom levels are his ask for
 "a quick read that you can zoom in from" taken literally.
 

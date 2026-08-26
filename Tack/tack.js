@@ -581,6 +581,14 @@ function ago(ms, now) {
   return Math.round(days / 7) + 'w';
 }
 
+/* `ago()` says 'now' for anything under a minute, and 'now ago' is not English.
+ * The suffix belongs wherever the phrase is built rather than in the value,
+ * so every caller that wants one says so here and gets the edge handled once. */
+function agoPhrase(ms, now) {
+  var a = ago(ms, now);
+  return a === 'now' ? 'just now' : a + ' ago';
+}
+
 function pad(s, n)  { s = String(s); return s.length >= n ? s : s + Array(n - s.length + 1).join(' '); }
 function lpad(s, n) { s = String(s); return s.length >= n ? s : Array(n - s.length + 1).join(' ') + s; }
 function clip(s, n) { s = String(s); return s.length <= n ? s : s.slice(0, n - 1) + '…'; }
@@ -688,7 +696,7 @@ function renderShow(s, query) {
     var r = hits[i];
     L.push('  ' + C.body(r.label) + C.dim('  ' + (r.branch || '?') +
       (r.upstream ? ' → ' + r.upstream : '') +
-      (r.last ? '  ·  last commit ' + ago(r.last.when, s.now) + ' ago' : '')));
+      (r.last ? '  ·  last commit ' + agoPhrase(r.last.when, s.now) : '')));
     if (r.last) L.push('  ' + C.dim('  “' + clip(r.last.subject, 60) + '”'));
     L.push('');
     if (r.error) { L.push('    ' + C.alert(r.error)); L.push(''); continue; }
@@ -899,9 +907,8 @@ function renderLog(s, opts) {
   } else {
     line1 = C.body('tack') + C.dim(' · ') + C.body(n + ' commit' + (n === 1 ? '' : 's')) +
             C.dim(' in ') + C.body(matchedLabel(s));
-    line2 = C.dim('newest ') + C.body(ago(s.commits[0].when, now)) +
-            C.dim(' ago · oldest ') + C.body(ago(s.commits[n - 1].when, now)) +
-            C.dim(' ago');
+    line2 = C.dim('newest ') + C.body(agoPhrase(s.commits[0].when, now)) +
+            C.dim(' · oldest ') + C.body(agoPhrase(s.commits[n - 1].when, now));
     if (s.days) line2 += C.dim('  ·  last ' + s.days + 'd');
   }
 
@@ -990,7 +997,7 @@ function renderCommit(c, now, opts) {
   }
 
   L.push('  ' + C.body(c.label) + C.dim('  ·  ') + C.chrome(c.short) +
-         C.dim('  ·  ' + ago(c.when, now) + ' ago') +
+         C.dim('  ·  ' + agoPhrase(c.when, now)) +
          (c.tack ? C.dim('  ·  ') + C.good('yours') : C.dim('  ·  ' + c.who)));
   L.push('');
   L.push('  ' + C.body(c.subject));
@@ -1260,7 +1267,8 @@ module.exports = {
   labelFor: labelFor, readRepo: readRepo, sweep: sweep, sweepPaths: sweepPaths, rank: rank,
   render: render, renderShow: renderShow, renderAttic: renderAttic, renderOpen: renderOpen, expandMatches: expandMatches, trimEnd: trimEnd, renderOne: renderOne, previewOf: previewOf,
   creature: creature, headBlock: headBlock, SHAPES: SHAPES, renderFaces: renderFaces,
-  moodOf: moodOf, ago: ago, visLen: visLen, padVis: padVis, lpad: lpad, C: C,
+  moodOf: moodOf, ago: ago, agoPhrase: agoPhrase, visLen: visLen, padVis: padVis,
+  lpad: lpad, C: C,
   main: main
 };
 

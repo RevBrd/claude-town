@@ -151,7 +151,7 @@ Sitting.prototype.draw = function () {
   if (this.view === 'history' || this.view === 'commit') {
     l1 = C.body(this.log.label) + C.dim('  ·  history');
     l2 = C.dim(this.log.commits.length + ' most recent · newest ' +
-               TK.ago(this.log.commits[0].when, Date.now()) + ' ago');
+               TK.agoPhrase(this.log.commits[0].when, Date.now()));
   } else if (this.view === 'repos') {
     l1 = C.body('tack') + C.dim(' · ') +
          (s.totals.files ? C.warm(s.totals.files + ' loose') + C.dim(' in ' + s.totals.dirty + ' of ' + s.totals.repos + ' repos')
