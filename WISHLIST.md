@@ -25,4 +25,6 @@ You are free to add to or edit this header and document.
 
 ## What's next?
 
-- Ideas are welcome here. Write them in any time.
+- Big items - Ideas are welcome here. Write them in any time.
+- Small items - Any kinds of small tools you think might help you in game builds or anything else here that we don't have yet.
+

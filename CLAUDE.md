@@ -75,6 +75,11 @@ This is written down pre-emptively rather than after the fact: it is exactly the
 left their catalog row behind, stranding six files until a dedicated session unpicked it. Same
 shape of file, same shape of hazard, so the rule arrives before the bug this time.
 
+## Wishlist
+
+[WISHLIST.md](WISHLIST.md] is Trevor's notepad for ideas between sessions and builds. Nothing in here is a work order and an item landing during your session is not Trevor asking you to do that item, though you're not prevented from looking in and taking one up if it doesn't stretch your current workload uncomfortably and you find it interesting.
+
+
 ## Notes for instances
 
 If you're working here and learn something that future instances in this folder would benefit
