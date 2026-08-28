@@ -476,6 +476,39 @@ function parseDeclaration(docText) {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// A COLLECTION declaring which of its own top-level folders are not works.
+//
+//   <!-- marquee: infrastructure=test|scripts|node_modules -->
+//
+// Every wing until KSP Tools held nothing but works at its root, so "folder
+// with no catalog row" was always real drift. A collection with a build step or
+// a test suite breaks that assumption, and those folders would be reported as
+// drift forever — which is how a drift readout stops being read.
+//
+// This is a list of names, which is uncomfortably close to the blocklist this
+// project refuses elsewhere. Three things make it a different animal:
+//
+//   - It lives in the COLLECTION's own CLAUDE.md, next to the thing that would
+//     change it, not in venue.json. The floor plan still lists roots only.
+//   - It is VALIDATED. A declared name that is not on disk, or one that also
+//     has a catalog row, is reported as an anomaly. It cannot rot in silence,
+//     which is the actual failure mode of a blocklist.
+//   - It cannot hide a work by accident. Declaring a real work as
+//     infrastructure removes it from the room, and the contradiction with its
+//     own catalog row is reported.
+//
+// SEPARATOR IS "|", not a comma or a space, because the shared declaration
+// grammar above splits pairs on /[\s,]+/ — a comma here would parse as the end
+// of the value and the start of a new bare key.
+// ---------------------------------------------------------------------------
+function parseInfrastructure(docText) {
+  const d = parseDeclaration(docText);
+  const v = d.infrastructure;
+  if (typeof v !== 'string' || !v) return [];
+  return v.split('|').map(x => x.trim()).filter(Boolean);
+}
+
 // WCAG relative luminance, so "is this readable" is a measured number rather
 // than an opinion formed while looking at one monitor in one room.
 function luminance(hex) {
@@ -638,18 +671,41 @@ function deriveWing(opts) {
 
   const catalog = parseCatalog(path.join(root, 'CLAUDE.md'));
   const byFolder = new Map(catalog.rows.map(r => [r.folder, r]));
+  const declaredInfra = parseInfrastructure(readDoc(root).text);
+  const anomalies = catalog.anomalies.slice();
   const seen = new Set();
   const annexed = [];
+  const infrastructure = [];
 
   const games = [];
-  for (const folder of listFolders(root)) {
+  const onDisk = listFolders(root);
+  for (const folder of onDisk) {
     const dir = path.join(root, folder);
     // A folder that is itself another wing's root is not an empty work here,
     // it is a door. Reporting it as "no build" would be true and useless.
     if (annex.indexOf(dir) >= 0) { annexed.push(folder); seen.add(folder); continue; }
+    // Declared infrastructure — a test suite, a build script, node_modules.
+    // Not a work, so not drift. Contradicting its own catalog row is reported
+    // rather than resolved: a folder cannot be both.
+    if (declaredInfra.indexOf(folder) >= 0 && !byFolder.has(folder)) {
+      infrastructure.push(folder); seen.add(folder); continue;
+    }
     const row = byFolder.get(folder) || null;
     if (row) seen.add(folder);
     games.push(describeFolder(dir, folder, row, fromDir));
+  }
+
+  // The declaration validates itself, which is the whole reason it is allowed
+  // to be a list of names at all.
+  for (const name of declaredInfra) {
+    if (onDisk.indexOf(name) < 0) {
+      anomalies.push({ kind: 'infrastructure-missing',
+        detail: 'declared infrastructure "' + name + '" is not a folder here' });
+    } else if (byFolder.has(name)) {
+      anomalies.push({ kind: 'infrastructure-is-catalogued',
+        detail: '"' + name + '" is declared infrastructure and also has a catalog row — ' +
+                'treated as a work' });
+    }
   }
 
   const missingFolders = catalog.rows
@@ -661,8 +717,9 @@ function deriveWing(opts) {
     gamesRootRelative: toUrlPath(path.relative(fromDir, root)),
     games,
     annexed,
+    infrastructure,
     missingFolders,
-    anomalies: catalog.anomalies,
+    anomalies,
   };
 }
 
@@ -714,7 +771,7 @@ function deriveVenue(opts) {
       res = deriveWing({ root, fromDir, annex });
     } catch (e) {
       wings.push({ id: w.id, name: w.name, kind: 'wing', missing: true, root: w.root, error: e.message,
-                   count: 0, annexed: [], missingFolders: [], anomalies: [] });
+                   count: 0, annexed: [], infrastructure: [], missingFolders: [], anomalies: [] });
       continue;
     }
     for (const g of res.games) { g.wing = w.id; entries.push(g); }
@@ -722,6 +779,7 @@ function deriveVenue(opts) {
       id: w.id, name: w.name, kind: 'wing', primary: !!w.primary,
       root: res.gamesRoot, rootRelative: res.gamesRootRelative,
       count: res.games.length, annexed: res.annexed,
+      infrastructure: res.infrastructure,
       missingFolders: res.missingFolders, anomalies: res.anomalies,
     });
   }
@@ -730,7 +788,7 @@ function deriveVenue(opts) {
     const rec = deriveResident(r, fromDir);
     if (rec.missing) {
       wings.push({ id: r.id, name: r.section || r.name, kind: 'resident', missing: true, root: r.path,
-                   count: 0, annexed: [], missingFolders: [], anomalies: [] });
+                   count: 0, annexed: [], infrastructure: [], missingFolders: [], anomalies: [] });
       continue;
     }
     rec.wing = r.id;
@@ -739,7 +797,7 @@ function deriveVenue(opts) {
     // `name` is what the work is called. Collapsing them made the Pet appear
     // as "Also in the building" by "Also in the building".
     wings.push({ id: r.id, name: r.section || r.name, kind: 'resident', primary: false,
-                 root: r.path, count: 1, annexed: [], missingFolders: [], anomalies: [] });
+                 root: r.path, count: 1, annexed: [], infrastructure: [], missingFolders: [], anomalies: [] });
   }
 
   return { generated: new Date().toISOString(), venue: venuePath, wings, entries };
@@ -785,6 +843,9 @@ function report(m) {
     }
     if (w.annexed && w.annexed.length) {
       L.push('     (annexed to their own wings: ' + w.annexed.join(', ') + ')');
+    }
+    if (w.infrastructure && w.infrastructure.length) {
+      L.push('     (declared infrastructure, not works: ' + w.infrastructure.join(', ') + ')');
     }
     L.push('');
   }

@@ -1,5 +1,5 @@
 {
-  "generated": "2026-08-28T00:49:35.144Z",
+  "generated": "2026-08-28T01:19:45.997Z",
   "venue": "C:\\Users\\fonte\\Projects\\Claude Town\\Marquee\\venue.json",
   "wings": [
     {
@@ -11,6 +11,7 @@
       "rootRelative": "../../Games",
       "count": 23,
       "annexed": [],
+      "infrastructure": [],
       "missingFolders": [],
       "anomalies": []
     },
@@ -26,6 +27,7 @@
         "Claudelings",
         "Space Stuff"
       ],
+      "infrastructure": [],
       "missingFolders": [],
       "anomalies": []
     },
@@ -38,6 +40,7 @@
       "rootRelative": "../../Misc Tools/Claudelings",
       "count": 4,
       "annexed": [],
+      "infrastructure": [],
       "missingFolders": [],
       "anomalies": []
     },
@@ -50,6 +53,7 @@
       "rootRelative": "../../Misc Tools/Space Stuff",
       "count": 4,
       "annexed": [],
+      "infrastructure": [],
       "missingFolders": [],
       "anomalies": [
         {
@@ -65,8 +69,13 @@
       "primary": false,
       "root": "C:\\Users\\fonte\\Projects\\KSP Tools",
       "rootRelative": "../../KSP Tools",
-      "count": 8,
+      "count": 5,
       "annexed": [],
+      "infrastructure": [
+        "node_modules",
+        "scripts",
+        "test"
+      ],
       "missingFolders": [],
       "anomalies": []
     },
@@ -78,6 +87,7 @@
       "root": "../../../.claude/Pet",
       "count": 1,
       "annexed": [],
+      "infrastructure": [],
       "missingFolders": [],
       "anomalies": []
     }
@@ -1188,75 +1198,6 @@
         "ink": "#e6e9f0",
         "accent": "#ff9d5c"
       },
-      "posterWarnings": [],
-      "wing": "ksp"
-    },
-    {
-      "folder": "node_modules",
-      "display": "node_modules",
-      "premise": "",
-      "state": "",
-      "credit": "",
-      "catalogStatus": "uncatalogued",
-      "entry": null,
-      "entryStatus": "no-build",
-      "declared": null,
-      "candidates": [],
-      "otherFiles": 1,
-      "title": null,
-      "bytes": null,
-      "modified": null,
-      "url": null,
-      "hasDoc": false,
-      "authoredDefects": null,
-      "billing": null,
-      "poster": null,
-      "posterWarnings": [],
-      "wing": "ksp"
-    },
-    {
-      "folder": "scripts",
-      "display": "scripts",
-      "premise": "",
-      "state": "",
-      "credit": "",
-      "catalogStatus": "uncatalogued",
-      "entry": null,
-      "entryStatus": "no-build",
-      "declared": null,
-      "candidates": [],
-      "otherFiles": 1,
-      "title": null,
-      "bytes": null,
-      "modified": null,
-      "url": null,
-      "hasDoc": false,
-      "authoredDefects": null,
-      "billing": null,
-      "poster": null,
-      "posterWarnings": [],
-      "wing": "ksp"
-    },
-    {
-      "folder": "test",
-      "display": "test",
-      "premise": "",
-      "state": "",
-      "credit": "",
-      "catalogStatus": "uncatalogued",
-      "entry": null,
-      "entryStatus": "no-build",
-      "declared": null,
-      "candidates": [],
-      "otherFiles": 4,
-      "title": null,
-      "bytes": null,
-      "modified": null,
-      "url": null,
-      "hasDoc": false,
-      "authoredDefects": null,
-      "billing": null,
-      "poster": null,
       "posterWarnings": [],
       "wing": "ksp"
     },

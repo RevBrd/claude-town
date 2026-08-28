@@ -69,8 +69,14 @@ function buildFixture(root) {
     '| [Ghost](Ghost/) | catalogued, never existed | missing |',
     '| [Sincere](Sincere/) | declares no authored defects | fine |',
     '| [Parody](Parody/) | declares authored defects | fine |',
+    '| [Contested](Contested/) | catalogued AND declared infrastructure | fine |',
     '',
     'Trailing prose.',
+    '',
+    'This collection carries tooling at its root as well as works. "Ghostbox" is',
+    'declared and does not exist, which has to be reported rather than ignored.',
+    '',
+    '<!-- marquee: infrastructure=harness|toolchain|Ghostbox|Contested -->',
     '',
     '## A second table, with different column names',
     '',
@@ -154,7 +160,19 @@ function buildFixture(root) {
   mk('LowContrast/CLAUDE.md', '# LowContrast' + NL + NL +
      '<!-- marquee: paper=#333333 ink=#3a3a3a -->' + NL);
 
+  // Tooling at the collection root: real folders, no catalog rows, declared
+  // above. Without the declaration these are drift forever, which is how a
+  // drift readout stops being read. KSP Tools is the collection this is for.
+  mk('harness/suite.js', 'process.exit(0);' + NL);
+  mk('toolchain/build.mjs', 'export default 1;' + NL);
+
+  // The contradiction: catalogued AND declared infrastructure. A folder cannot
+  // be both, so the catalog wins and the conflict is reported. Declaring a real
+  // work as tooling must never be able to quietly delete it from the room.
+  mk('Contested/game.html', html('CONTESTED'));
+
   // No folder for Ghost/ — that is the point of Ghost.
+  // No folder for Ghostbox/ either — that is the point of Ghostbox.
 }
 
 // ---------------------------------------------------------------------------
@@ -198,6 +216,19 @@ function assertions(derive, root) {
   is('uncatalogued folder still appears', by('Strays') ? by('Strays').catalogStatus : 'ABSENT', 'uncatalogued');
   is('uncatalogued folder still resolves', by('Strays') ? by('Strays').entry : null, 'stray.html');
   is('catalogued-but-absent is reported', m.missingFolders.map(r => r.folder), ['Ghost']);
+
+  // --- a collection declaring its own non-work folders --------------------
+  const anomalyKinds = m.anomalies.map(a => a.kind).sort();
+  is('declared infrastructure is not a work',      !!by('harness'), false);
+  is('declared infrastructure is listed',          m.infrastructure, ['harness', 'toolchain']);
+  is('infrastructure is not counted as drift',
+     m.games.filter(g => g.catalogStatus === 'uncatalogued' &&
+                         ['harness', 'toolchain'].indexOf(g.folder) >= 0).map(g => g.folder), []);
+  is('declared infrastructure that is absent is reported',
+     anomalyKinds.indexOf('infrastructure-missing') >= 0, true);
+  is('a catalogued folder is still a work',        by('Contested') ? by('Contested').catalogStatus : 'ABSENT', 'listed');
+  is('catalogued-and-declared is reported',
+     anomalyKinds.indexOf('infrastructure-is-catalogued') >= 0, true);
   is('premise is carried through',        by('Solo').premise, 'one file');
 
   // Direct test of the table parser rather than a count of the final join —
@@ -205,7 +236,7 @@ function assertions(derive, root) {
   // a parser that tracked table state instead of matching links would swallow
   // those lines as rows.
   const cat = derive.parseCatalog(path.join(root, 'CLAUDE.md'));
-  is('only linked rows are parsed',       cat.rows.length, 12);
+  is('only linked rows are parsed',       cat.rows.length, 13);
   is('prose pipes produce no anomalies',  cat.anomalies, []);
 
   // --- authored defects: three states, and unknown is not false -----------
@@ -231,7 +262,8 @@ function assertions(derive, root) {
   is('"What it is" maps to premise',    by('Tooly').premise, 'located by header name');
   is('"Built by" maps to credit',       by('Tooly').credit, 'Some Model');
   is('"Premise" still maps to premise', by('Solo').premise, 'one file');
-  is('named headers raise no anomaly',  m.anomalies, []);
+  is('named headers raise no column anomaly',
+     m.anomalies.filter(a => a.kind.indexOf('catalog') === 0), []);
   is('entry url is encoded',            by('Two Words').url.indexOf('Two%20Words') >= 0, true);
 
   // --- declared posters ----------------------------------------------------
@@ -255,7 +287,12 @@ function assertions(derive, root) {
   // --- incidental ---------------------------------------------------------
   is('title is pulled from the entry',    by('Decoyed').title, 'THE REAL ONE');
   is('doc presence is reported',          by('Renamed').hasDoc, false);
-  is('no anomalies on a clean fixture',   m.anomalies, []);
+  // NOT "no anomalies": the fixture declares Ghostbox (absent) and Contested
+  // (also catalogued) on purpose, so the validation has something to catch.
+  // Pinning the exact set keeps this stronger than an emptiness check — a
+  // spurious third anomaly still turns it red.
+  is('exactly the expected anomalies',    m.anomalies.map(a => a.kind).sort(),
+     ['infrastructure-is-catalogued', 'infrastructure-missing']);
 
   return T;
 }
@@ -371,6 +408,24 @@ const MUTANTS = [
     find: '    if (r < TUNE.POSTER_MIN_CONTRAST) {',
     repl: '    if (false) {',
     expect: 'low contrast is reported',
+  },
+  {
+    name: 'M17 infrastructure declaration ignored, tooling scans as works',
+    find: '    if (declaredInfra.indexOf(folder) >= 0 && !byFolder.has(folder)) {',
+    repl: '    if (false) {',
+    expect: 'declared infrastructure is not a work',
+  },
+  {
+    name: 'M18 infrastructure declaration trusted without validation',
+    find: "  for (const name of declaredInfra) {\n    if (onDisk.indexOf(name) < 0) {",
+    repl: '  for (const name of []) {\n    if (onDisk.indexOf(name) < 0) {',
+    expect: 'declared infrastructure that is absent is reported',
+  },
+  {
+    name: 'M19 infrastructure declaration outranks a catalog row',
+    find: '    if (declaredInfra.indexOf(folder) >= 0 && !byFolder.has(folder)) {',
+    repl: '    if (declaredInfra.indexOf(folder) >= 0) {',
+    expect: 'a catalogued folder is still a work',
   },
 ];
 

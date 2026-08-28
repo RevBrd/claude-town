@@ -69,15 +69,8 @@ might reorganise itself first. It did. Splitting it into folder-per-tool with a
 Worth remembering as evidence for the bar: the collection was made scannable rather than the
 scanner made cleverer.
 
-**It is also the first wing whose root holds things that are not works.** `test/`, `scripts/` and
-`node_modules/` sit beside the five tool folders, so they scan as folders with no catalog row and
-appear in the drift readout every run. That is Marquee behaving correctly — it reports what it
-finds and guesses nothing — but they will never resolve, and permanent unfixable drift is how a
-readout stops being read. Left as-is pending Trevor's call between three options: hide the tooling
-under a dot-prefixed folder (the scan already skips those, costs the collection its `npm test`
-ergonomics), teach a wing to declare its non-work folders in its own `CLAUDE.md` the way a work
-declares its entry point, or accept the noise. **Do not solve it with a blocklist in
-`venue.json`** — that is the hand-written list this project exists to avoid.
+**It is also the first wing whose root holds things that are not works**, and that did need a
+change — see *A collection may declare its own non-work folders*, below.
 
 ## Layout
 
@@ -296,6 +289,52 @@ null is load-bearing — see below for why.
 
 Only `play` is ever *required*, and only where a scan is genuinely ambiguous — three folders as of 17 Aug 2026. `defects` and `billing` are always optional.
 
+## A collection may declare its own non-work folders
+
+Added 27 Aug 2026 with the KSP Tools wing, which is the first collection whose root holds tooling
+as well as works — `test/`, `scripts/` and `node_modules/` sit beside the five tool folders. Every
+wing before it held nothing but works, so *"folder with no catalog row"* was always real drift.
+Those three would have been reported forever, and **permanent unfixable drift is how a drift
+readout stops being read.**
+
+The declaration goes in the **collection's** `CLAUDE.md`, alongside the catalog table it already
+carries:
+
+```
+<!-- marquee: infrastructure=test|scripts|node_modules -->
+```
+
+This is the first *wing-level* marker; every other key attaches to a single work. It is also,
+undeniably, a list of names — the thing this project refuses elsewhere. Three properties are what
+make it a different animal, and if any of them is ever removed the objection becomes correct again:
+
+- **It lives with the collection, not in `venue.json`.** The floor plan still lists roots and never
+  contents. A collection knows which of its folders are works; the launcher shouldn't be told from
+  across the tree, and it shouldn't guess.
+- **It validates itself.** A declared name that is not a folder is reported
+  (`infrastructure-missing`), and so is one that also has a catalog row
+  (`infrastructure-is-catalogued`). Silent rot is the actual failure mode of a blocklist, and this
+  one cannot rot quietly.
+- **It cannot hide a work.** A catalog row always wins. Declaring a real work as tooling reports the
+  contradiction and leaves the work in the room, because the worst available failure here is a work
+  disappearing in a way that looks like it worked.
+
+**The separator is `|`, not a comma.** The shared declaration grammar splits pairs on `/[\s,]+/`,
+so a comma would end the value and begin a bare key. That is a grammar constraint, not a style
+choice; don't "tidy" it.
+
+Covered by three mutants — M17 (declaration ignored), M18 (declaration trusted without validation),
+M19 (declaration outranking a catalog row) — and by four fixture folders: two real tooling
+directories, one declared name with nothing behind it, and one folder that is catalogued and
+declared at once. The fixture is therefore **no longer anomaly-free by design**, so the two
+assertions that used to check `m.anomalies` was empty now pin the exact expected set instead, which
+is strictly stronger.
+
+The alternative was hiding the tooling under a dot-prefixed folder, which the scan already skips.
+It would have worked and it needed no change here — but it would have cost KSP Tools its `npm test`
+ergonomics to solve a Marquee problem in someone else's repo, and solved it only once. The next
+collection to grow a build step would have hit the same wall.
+
 ## Catalog columns are located by header name
 
 The four collections write their tables differently:
@@ -376,14 +415,14 @@ it in an editor and says why, precisely because handing it to the shell would *r
 is the safe way to **read** one of these, and `Test.bat` is the way to **run** them. Neither is a
 double-click on the `.js` itself, and the file manager gives no hint of that.
 
-44 assertions. `selftest.js` asserts against a **synthetic fixture**, not against `Projects/Games/`. Testing the
+60 assertions. `selftest.js` asserts against a **synthetic fixture**, not against `Projects/Games/`. Testing the
 live collection was the first design and it was wrong: every assertion would encode a fact about
 a game somebody is actively editing, so the suite would go red every time a game shipped, and a
 suite that cries wolf gets deleted. The fixture reproduces each *hazard* instead, and hazards
 don't change when a game does.
 
-It also carries a **mutation suite** — sixteen deliberate breakages of derive.js's real rules, each
-naming the assertion that must go red. All sixteen are caught. If one ever escapes, the rule it
+It also carries a **mutation suite** — nineteen deliberate breakages of derive.js's real rules, each
+naming the assertion that must go red. All nineteen are caught. If one ever escapes, the rule it
 breaks is not actually covered and the suite is lying about its own coverage.
 
 `smoke.js` covers the page rather than the logic: it boots `marquee.html` in headless Chrome and
