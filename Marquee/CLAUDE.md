@@ -8,7 +8,7 @@ Marquee **keeps no list of works**. It derives one, every run, from the filesyst
 catalog table that already lives in each collection's own `CLAUDE.md`. That is the whole
 architectural idea and everything else follows from it.
 
-It is a **building**: five rooms as of 17 Aug 2026, holding 34 open works.
+It is a **building**: six rooms as of 27 Aug 2026, holding 39 open works.
 
 | Room | Kind | What is in it |
 |---|---|---|
@@ -16,6 +16,7 @@ It is a **building**: five rooms as of 17 Aug 2026, holding 34 open works.
 | Side stage | wing | `Misc Tools/` — the small self-contained tools |
 | Art house | wing | `Misc Tools/Claudelings/` |
 | Planetarium | wing | `Misc Tools/Space Stuff/` |
+| Mission control | wing | `KSP Tools/` — five instruments for a console KSP save |
 | Also in the building | resident | the Pet, `~/.claude/Pet/` |
 
 ## Why it's built this way
@@ -60,10 +61,23 @@ Nested wings are handled: `Claudelings/` and `Space Stuff/` live inside `Misc To
 Side Stage scan **annexes** them rather than reporting them as empty folders. A folder that is
 another wing's root is a door, not a work.
 
-**KSP Tools is deliberately out.** Its shape is genuinely different — loose HTML at the root, no
-per-tool folders, and a catalog keyed on backticked filenames rather than folder links. It needs a
-second scan mode, which is a real if bounded job. Deferred at Trevor's call, 17 Aug 2026, since
-that tree may reorganise itself first.
+**KSP Tools came in on 27 Aug 2026, and it needed no new scan mode.** It had been left out on
+17 Aug because its shape was genuinely different — loose HTML at the root, no per-tool folders, a
+catalog keyed on backticked filenames — and the note here said it was deferred because that tree
+might reorganise itself first. It did. Splitting it into folder-per-tool with a
+`| Tool | What it is | Built by |` catalog was enough on its own; the derivation was not touched.
+Worth remembering as evidence for the bar: the collection was made scannable rather than the
+scanner made cleverer.
+
+**It is also the first wing whose root holds things that are not works.** `test/`, `scripts/` and
+`node_modules/` sit beside the five tool folders, so they scan as folders with no catalog row and
+appear in the drift readout every run. That is Marquee behaving correctly — it reports what it
+finds and guesses nothing — but they will never resolve, and permanent unfixable drift is how a
+readout stops being read. Left as-is pending Trevor's call between three options: hide the tooling
+under a dot-prefixed folder (the scan already skips those, costs the collection its `npm test`
+ergonomics), teach a wing to declare its non-work folders in its own `CLAUDE.md` the way a work
+declares its entry point, or accept the noise. **Do not solve it with a blocklist in
+`venue.json`** — that is the hand-written list this project exists to avoid.
 
 ## Layout
 

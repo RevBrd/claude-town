@@ -38,6 +38,11 @@
       "id": "space",
       "name": "Planetarium",
       "root": "../../Misc Tools/Space Stuff"
+    },
+    {
+      "id": "ksp",
+      "name": "Mission control",
+      "root": "../../KSP Tools"
     }
   ],
   "residents": [
