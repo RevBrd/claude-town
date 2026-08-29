@@ -325,10 +325,29 @@ function suite(TK, W, SIT, U, O) {
     ok(TK.renderFaces().join('\n').indexOf(name) !== -1, 'faces shows ' + name);
   });
 
-  eq(TK.moodOf({ totals: { errors: 1, empty: 0, files: 0 } }), 'alert', 'errors alarm it');
-  eq(TK.moodOf({ totals: { errors: 0, empty: 0, files: 4 } }), 'awake', 'loose work wakes it');
-  eq(TK.moodOf({ totals: { errors: 0, empty: 0, files: 0 } }), 'pleased', 'a clean tree pleases it');
-  eq(TK.moodOf({ totals: { errors: 0, empty: 1, files: 0 } }), 'puzzled', 'an empty repo puzzles it');
+  var mood = function (o) {
+    return TK.moodOf({ totals: {
+      errors: o.errors || 0, empty: o.empty || 0,
+      emptyLoose: o.emptyLoose || 0, files: o.files || 0 } });
+  };
+
+  eq(mood({ errors: 1 }), 'alert', 'errors alarm it');
+  eq(mood({ files: 4 }), 'awake', 'loose work wakes it');
+  eq(mood({}), 'pleased', 'a clean tree pleases it');
+  eq(mood({ emptyLoose: 1, files: 3 }), 'puzzled',
+     'work in a repo with no commits at all puzzles it');
+
+  /* The 28 Aug 2026 change, and the reason for it. An empty repo holding
+   * nothing is not a worry -- there is nothing in it to lose -- and Tack sat
+   * permanently puzzled over one abandoned `git init` in the tree. Both halves
+   * are asserted, because a mood that fires on the wrong state and a mood that
+   * fires on none are different bugs and only one of them is visible. */
+  eq(mood({ empty: 1 }), 'pleased',
+     'but an empty repo with nothing in it does not -- a clean tree is clean');
+  eq(mood({ empty: 2, files: 4 }), 'awake',
+     'and an empty repo elsewhere does not colour ordinary loose work');
+  eq(mood({ errors: 1, emptyLoose: 1, files: 3 }), 'alert',
+     'an unreadable repo still outranks it');
 
   eq(TK.visLen('\x1b[38;5;179mabc\x1b[0m'), 3, 'colour codes do not count as width');
   eq(TK.visLen('abc'), 3, 'plain text measures plainly');
@@ -346,6 +365,18 @@ function suite(TK, W, SIT, U, O) {
      'no commits yet', 'an empty repo says so instead of saying clean');
   eq(TK.previewOf({ error: null, empty: false, loose: 0, files: [] }),
      'clean', 'a clean repo says clean');
+
+  /* The row behind the puzzled face. Before 28 Aug 2026 a repo with loose work
+   * and no commits rendered exactly like any other dirty repo, so the state
+   * that most wants saying out loud was the one state that never said it. */
+  var newborn = { error: null, empty: true, loose: 2,
+                  files: [{ path: 'engine.js' }, { path: 'index.html' }] };
+  ok(TK.previewOf(newborn, 60).indexOf('no commits yet') === 0,
+     'a repo with work and no history says so before it names the files');
+  ok(/engine\.js/.test(TK.previewOf(newborn, 60)),
+     'and still names them');
+  ok(TK.previewOf(newborn, 40).length <= 40,
+     'the warning is inside the column, not on top of it');
 
   section('the whole readout');
 
@@ -1400,6 +1431,22 @@ var MUTANTS = [
   ['the empty-repo test is inverted',
    "  rec.empty = !head.ok;",
    "  rec.empty = head.ok;"],
+
+  /* The 28 Aug 2026 face, from both directions. The first restores the old
+   * trigger, which worried about a repo holding nothing; the second points the
+   * mood at nothing at all, which is how a fix like this rots -- the bad state
+   * stops firing and nobody notices the good one never started. */
+  ['an empty repo with nothing in it worries him again',
+   "  if (s.totals.emptyLoose) return 'puzzled';",
+   "  if (s.totals.empty && !s.totals.files) return 'puzzled';"],
+
+  ['the puzzled mood becomes unreachable',
+   "  if (s.totals.emptyLoose) return 'puzzled';",
+   "  if (false) return 'puzzled';"],
+
+  ['a repo with work and no history stops saying so',
+   "  var lead = r.empty ? 'no commits yet · ' : '';",
+   "  var lead = '';"],
 
   ['a staged change reads as modified',
    "  if (x !== '.')               return 'staged';",

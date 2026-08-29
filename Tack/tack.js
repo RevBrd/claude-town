@@ -289,6 +289,12 @@ function sweep(cfgFile, now) {
       dirty:  repos.filter(function (r) { return r.loose > 0; }).length,
       files:  repos.reduce(function (n, r) { return n + r.loose; }, 0),
       empty:  repos.filter(function (r) { return r.empty; }).length,
+      /* Repos with no commits AND loose work in them. A subset of `empty`, kept
+       * separate because the two states are not the same animal: an empty repo
+       * with nothing in it holds nothing at risk, while an empty repo with
+       * files in it holds the ONLY copy of them. That is the one worth a face.
+       * See moodOf. */
+      emptyLoose: repos.filter(function (r) { return r.empty && r.loose > 0; }).length,
       errors: repos.filter(function (r) { return r.error; }).length,
       oldest: repos.reduce(function (m, r) {
         return r.oldest !== null && (m === null || r.oldest < m) ? r.oldest : m; }, null)
@@ -563,9 +569,23 @@ function headBlock(mood, line1, line2) {
   return L;
 }
 
+/* Tack is asked exactly one question -- what is loose -- and the face is the
+ * answer to it, so nothing that is not loose may change the face.
+ *
+ * `puzzled` used to fire on `empty && !files`, which turned out to be a state
+ * that can only ever be noise: if a repo has no commits and nothing loose, then
+ * by definition it holds nothing at risk. It fired permanently, because
+ * `Projects/Home` is an abandoned `git init` with nothing in it, and a
+ * permanent worried face is a face nobody reads. (Trevor, 28 Aug 2026: the
+ * clean tree should get the happy one.)
+ *
+ * So it now points at the state that is genuinely a *huh?* -- loose work in a
+ * repo that has never been committed at all. There is no history under those
+ * files; they are the only copy. It is rare, it is reachable (every new project
+ * passes through it), and unlike the old trigger it is worth interrupting for. */
 function moodOf(s) {
   if (s.totals.errors) return 'alert';
-  if (s.totals.empty && !s.totals.files) return 'puzzled';
+  if (s.totals.emptyLoose) return 'puzzled';
   if (s.totals.files)  return 'awake';
   return 'pleased';
 }
@@ -608,6 +628,14 @@ function previewOf(r, width) {
   if (!r.loose) return 'clean';
   width = width || T.PREVIEW_MAX;
 
+  /* A repo with loose work and no commits at all used to render identically to
+   * any other dirty repo -- the `no commits yet` line above is only reached
+   * when the repo is also empty of work, so the one case where it matters most
+   * was the one case that never said it. It leads, because it is the thing that
+   * changes what the file names underneath it mean. */
+  var lead = r.empty ? 'no commits yet · ' : '';
+  if (lead) width = Math.max(12, width - lead.length);
+
   var names = r.files.map(function (f) { return f.path.replace(/\\/g, '/'); });
   var shown = [], i;
   for (i = 0; i < names.length && shown.length < T.PREVIEW_FILES; i++) {
@@ -620,7 +648,7 @@ function previewOf(r, width) {
   var rest = names.length - shown.length;
   var s = clip(shown.join(', '), width - (rest > 0 ? String(' +' + rest).length : 0));
   if (rest > 0) s += ' +' + rest;
-  return s;
+  return lead + s;
 }
 
 function render(s) {

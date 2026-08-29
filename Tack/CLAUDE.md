@@ -390,7 +390,7 @@ Tack/
   tack.cmd           the shim, so it is one word instead of a path
   Look.bat           double-click: the glance
   Sit.bat            double-click: the pane
-  tools/selftest.js  500 assertions + 108 mutants across all five files
+  tools/selftest.js  506 assertions + 111 mutants across all five files
 ```
 
 The split is the security model, not tidiness. `tack.js` runs on every glance and has no
@@ -432,9 +432,39 @@ output is measured in context when the consumer is a process.
 
 The creature is a thumbtack seen from the side: a round head, two eyes, a point. **Only the eyes
 change, and only because of what was found** — pleased at a clean tree, awake when something is
-loose, puzzled by an empty repo, alarmed by a repo it could not read. It is a readout, not a
-performance. It does not wander, and nothing about it is on a timer, because an animation that
-plays while you are reading a list is a thing that pulls your eye off the list.
+loose, puzzled by work in a repo that has never been committed, alarmed by a repo it could not
+read. It is a readout, not a performance. It does not wander, and nothing about it is on a timer,
+because an animation that plays while you are reading a list is a thing that pulls your eye off
+the list.
+
+### A mood that could only ever be noise
+
+`puzzled` used to fire on `empty && !files` — some repo has no commits, and nothing anywhere is
+loose. Read that condition twice and it collapses: **if a repo has no commits and nothing loose in
+it, it holds nothing at risk.** There is no state of the tree in which that face was telling you
+something you could act on.
+
+In practice it fired permanently, because `Projects/Home` is an abandoned `git init` from July
+containing one gitignored settings file, and a worried face that is always on is a face nobody
+reads. Trevor asked for the clean tree to get the happy one (28 Aug 2026), which it now does.
+
+The mood was **repointed rather than deleted**, at the state that is genuinely a *huh?* — loose
+work in a repo with no commits at all. Those files have no history under them; they are the only
+copy. It is rare, every new project passes through it, and it is worth interrupting for. Before
+this it rendered as ordinary `awake` and the row named the files without ever saying there was
+nothing behind them, so the one case that most wanted saying out loud was the one case that never
+said it. The row now leads with `no commits yet ·` and the totals carry `emptyLoose` beside
+`empty`, kept separate on purpose because the two states are not the same animal.
+
+**The general form, and the reason this is written down rather than just fixed:** a signal whose
+triggering condition can never coincide with a real problem is worse than no signal, because it
+trains the reader to ignore the channel it arrives on. Tack is asked exactly one question — what
+is loose — and the face is the answer to it. Nothing that is not loose may change it.
+
+Three mutants guard the result, from both directions: the old trigger restored, the new one made
+unreachable, and the row's warning dropped. The second matters as much as the first — that is how
+a fix like this rots, with the bad state no longer firing and nobody noticing the good one never
+started.
 
 ## Three decisions worth keeping
 
@@ -584,5 +614,11 @@ checking whether a commit view needed `git show` on the allowlist -- it does not
 why turned up that `git log --output=` writes a file, which meant the verb list had quietly
 stopped being a sufficient guard the moment a user-typed ref existed. And the **count that was a
 lie** was caught by an assertion I had written expecting it to pass.
+
+The face on a clean tree — `emptyLoose`, the repointed `puzzled`, the `no commits yet ·` lead on a
+row, six assertions and three mutants — by **CTown 9** (Opus 5), 28 Aug 2026, from Trevor's
+wishlist note that a clean tree should get the happy one. He was right about the symptom and the
+cause turned out to be one line further back than either of us expected: the trigger was not
+mis-tuned, it was pointed at a condition that could not ever mean anything.
 
 Same convention as the rest of the tree: **if you change something here, add yourself.**
