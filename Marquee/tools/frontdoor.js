@@ -203,7 +203,28 @@ function assertions(M) {
     M.C.on = false;
     const list = M.renderList(v.works).join('\n');
     ok(list.indexOf('now playing') !== -1, 'the listing says what it is');
-    ok(list.indexOf('Planetarium') !== -1, 'and groups by room');
+
+    // Rooms are asserted against the FLOOR PLAN rather than by name. This used
+    // to read `list.indexOf('Planetarium') !== -1`, which is a fact about
+    // venue.json of exactly the kind this file says it does not encode -- and
+    // it passed happily through the bug below, because Planetarium was one of
+    // the rooms that still worked.
+    //
+    // 28 Aug 2026: marquee.js carried its own wing-id -> room-name lookup, and
+    // it had silently dropped the KSP wing, so Mission control printed as `ksp`
+    // from the day that wing was added. A second hand-written list in the one
+    // file nobody opens is the precise thing this project exists to not have.
+    // The heading now comes from the same derivation that placed the work.
+    const esc = s => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const heading = name => new RegExp('^  ' + esc(name) + '$', 'm').test(list);
+
+    const withWorks = v.wings.filter(w =>
+      v.works.some(x => !x.builtin && x.wing === w.id));
+    ok(withWorks.length > 0, 'the listing groups by room (' + withWorks.length + ' rooms)');
+    eq(withWorks.filter(w => !heading(w.name)).map(w => w.id), [],
+       'every room holding works prints under the name venue.json gave it');
+    eq(v.wings.filter(w => heading(w.id)).map(w => w.id), [],
+       'and no heading is a bare wing id');
 
     const hits = M.renderHits('dead', { tier: 'prefix', hits: WORKS.slice(0, 2) }).join('\n');
     ok(hits.indexOf('Dead Space') !== -1 && hits.indexOf('Dead Reckoning') !== -1,
@@ -247,6 +268,13 @@ const MUTANTS = [
   ['paths are rebuilt from the wing root instead of the tested url',
    '      file: e.url ? path.resolve(HERE, D.decodeTarget(e.url)) : null',
    '      file: e.entry ? path.join(HERE, e.folder || "", e.entry) : null'],
+
+  // The bug of 28 Aug 2026, restored: the room name stops travelling with the
+  // work, so every heading falls back to the wing id. This is what a second
+  // hand-written list decays into once somebody adds a wing and forgets it.
+  ['room names stop coming from the floor plan',
+   '      room: roomOf[e.wing],',
+   '      room: undefined,'],
 
   ['an empty query matches everything',
    '  if (!q) return { tier: null, hits: [] };',

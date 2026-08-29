@@ -181,6 +181,38 @@ describe themselves that way. As a fallback the same field is pure gain: `block 
 Space, `i guess` finds Blocks IG. It widens a miss instead of muddying a hit. There is a mutant
 that promotes titles back to peer rank.
 
+### The second list that got in anyway
+
+Found 28 Aug 2026, and it is the best evidence this project has for its own thesis.
+
+`marquee.js` carried its own lookup table mapping wing id to room name — `{ games: 'Main house',
+tools: 'Side stage', … }` — six lines under the colour palette, in a file whose header says in so
+many words that *"a launcher with its own list is the exact thing the whole project exists to
+avoid."* It was written at the same time as that sentence.
+
+It had **already drifted.** KSP Tools came in as a wing on 27 Aug and nobody edited the table, so
+`marquee` printed a room called `ksp` for a day, while `venue.json`, `manifest.json`, the page and
+the Electron roots all said Mission control. Nothing failed. A launcher's config is exactly the
+file nobody reads, which is the argument this project was founded on and which it then proved on
+itself.
+
+The fix is a deletion, not a correction: **the room name travels with the work**, attached in
+`works()` from the same derivation that decided which room the work is in. The fallback for an
+unknown wing is the bare id, deliberately — if a heading ever prints as `ksp` again, that is the
+venue and the derivation disagreeing and it should look like the bug it is.
+
+Two things worth carrying past this specific table:
+
+- **The rule was known, written down, and still broken by the person writing it down.** A stated
+  principle does not protect anything. The assertion does. There is now a mutant (`room names stop
+  coming from the floor plan`) and a check that every room holding works prints under the name
+  `venue.json` gave it.
+- **The old assertion looked like coverage and wasn't.** `frontdoor.js` tested this area with
+  `list.indexOf('Planetarium') !== -1` — which is both a fact about the venue of the kind this
+  suite says it never encodes, *and* useless here, because Planetarium was one of the rooms that
+  still worked. A check placed only where the failure cannot reach it is not a check; the rooms
+  are now asserted against the floor plan rather than by name.
+
 ### Two path bugs worth remembering
 
 Both looked right in a listing and opened nothing.
@@ -434,7 +466,7 @@ dir before loading, which is correct for a self-contained file and wrong here: `
 loads `manifest.js` by relative path, so a copy in tmp renders the "no manifest" state and passes
 cheerfully having shown nothing. `smoke.js` copies alongside the original instead.
 
-`frontdoor.js` covers the terminal front door — 48 assertions and 9 mutants. Same rule about
+`frontdoor.js` covers the terminal front door — 50 assertions and 10 mutants. Same rule about
 *where* to assert: matching is pure, so it runs against a **synthetic list of works**, because
 asserting that "dead space" opens Dead Space would encode a fact about a game somebody may rename
 tomorrow. Its fixture is one entry per hazard — two names sharing a prefix, three names sharing a
@@ -849,6 +881,11 @@ The terminal front door — `marquee.js`, `marquee.cmd`, `tools/frontdoor.js` �
 proposed for [Tack](../Tack/) and moved here instead: Tack's vocabulary is closed to git on
 purpose, and the thing that knows what is playing should be the thing that opens it. Sharing
 `derive.js` is what makes a second front door safe rather than a second catalog.
+
+The room-name table removed from it — see *The second list that got in anyway* — by **CTown 9**
+(Opus 5), 28 Aug 2026, found while reading the architecture doc and the code in the same sitting,
+which is the only reason it was visible at all. A day-old wing printing under its id is not a
+symptom anybody would have gone looking for.
 
 The runtime — `electron/main.js`, `package.json`, `Marquee.bat` — begun by **CTown 7**
 (Opus 4.7), 24 Aug 2026: a bare shell that opened the page in a real window, with a header

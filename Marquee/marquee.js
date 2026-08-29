@@ -32,7 +32,7 @@ var VENUE = path.join(HERE, 'venue.json');
 function builtins() {
   return [{
     display: 'Marquee', folder: 'Marquee', title: 'the building itself',
-    wing: 'here', entryStatus: 'ok', file: path.join(HERE, 'marquee.html'),
+    wing: 'here', room: '', entryStatus: 'ok', file: path.join(HERE, 'marquee.html'),
     builtin: true
   }];
 }
@@ -123,12 +123,23 @@ function match(query, works) {
 function works() {
   var m = D.deriveVenue({ venue: VENUE });
 
+  /* The room name travels WITH the work, taken from the same derivation that
+   * decided which room it is in. There used to be a `ROOM` lookup table here
+   * mapping wing id to display name by hand, and on 28 Aug 2026 it was found to
+   * have silently dropped the KSP wing -- Mission control had been printing as
+   * `ksp` since the wing was added, because a second hand-written list in the
+   * one file nobody opens is exactly the thing this project exists to not have.
+   * venue.json already names every room. Nothing else may. */
+  var roomOf = {};
+  (m.wings || []).forEach(function (w) { roomOf[w.id] = w.name; });
+
   var out = m.entries.map(function (e) {
     return {
       display: e.display || e.folder,
       folder: e.folder,
       title: e.title,
       wing: e.wing,
+      room: roomOf[e.wing],
       entryStatus: e.entryStatus,
       candidates: e.candidates || [],
       /* `url` is the field the page itself opens, relative to this folder, so
@@ -189,8 +200,12 @@ var C = {
   bad:  function (s) { return C.w('38;5;174', s); }
 };
 
-var ROOM = { games: 'Main house', tools: 'Side stage', claudelings: 'Art house',
-             space: 'Planetarium', pet: 'Also in the building', here: '' };
+/* A work always knows its own room by now -- `works()` attached it from
+ * venue.json. The fallback is the wing id, which is visibly wrong on purpose:
+ * if this ever prints a bare id again, that is the venue and the derivation
+ * disagreeing, and it should look like the bug it is rather than be papered
+ * over with a lookup table. */
+function roomName(w) { return w.room != null ? w.room : w.wing; }
 
 function pad(s, n) { s = String(s); return s.length >= n ? s : s + Array(n - s.length + 1).join(' '); }
 function trimEnd(s) { return String(s).replace(/\s+$/, ''); }
@@ -209,7 +224,7 @@ function renderList(all) {
     if (w.builtin) return;
     if (!seen[w.wing]) {
       seen[w.wing] = 1;
-      L.push('  ' + C.dim(ROOM[w.wing] || w.wing));
+      L.push('  ' + C.dim(roomName(w)));
     }
     var ok = w.entryStatus === 'ok';
     L.push('    ' + (ok ? C.body(pad(w.display, 26)) : C.dim(pad(w.display, 26))) +
@@ -235,7 +250,7 @@ function renderHits(query, res) {
   L.push('');
   res.hits.forEach(function (w) {
     L.push('    ' + C.body(pad(w.display, 26)) +
-           C.dim(ROOM[w.wing] || w.wing) +
+           C.dim(roomName(w)) +
            (w.entryStatus === 'ok' ? '' : C.dim('  — ' + w.entryStatus)));
   });
   L.push('');
