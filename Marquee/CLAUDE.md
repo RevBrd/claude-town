@@ -8,7 +8,7 @@ Marquee **keeps no list of works**. It derives one, every run, from the filesyst
 catalog table that already lives in each collection's own `CLAUDE.md`. That is the whole
 architectural idea and everything else follows from it.
 
-It is a **building**: six rooms as of 27 Aug 2026, holding 39 open works.
+It is a **building**: six rooms as of 29 Aug 2026, holding 40 open works.
 
 | Room | Kind | What is in it |
 |---|---|---|
@@ -16,7 +16,7 @@ It is a **building**: six rooms as of 27 Aug 2026, holding 39 open works.
 | Side stage | wing | `Misc Tools/` — the small self-contained tools |
 | Art house | wing | `Misc Tools/Claudelings/` |
 | Planetarium | wing | `Misc Tools/Space Stuff/` |
-| Mission control | wing | `KSP Tools/` — five instruments for a console KSP save |
+| Mission control | wing | `KSP Tools/` — six instruments for a console KSP save |
 | Also in the building | resident | the Pet, `~/.claude/Pet/` |
 
 ## Why it's built this way
