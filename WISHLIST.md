@@ -8,7 +8,15 @@ You are free to add to or edit this header and document.
 ## Tack
 
 - Makes a happy face after making a commit.
-- It currently makes a confused face when the tree is clean because Home doesn't have any commits. I actually don't even know where "home" is lmao, I don't think I set that one up unless it's the shell that everything else lives in. Either way, I'm hoping we can either find it and do a "first commit" there or exclude it from what Tack finds confusing, whatever lets him do a happy face on a clean tree.
+- ~~It currently makes a confused face when the tree is clean because Home doesn't have any commits.~~
+  **Done, 28 Aug 2026.** `puzzled` used to fire on `empty && !files` — a state that by definition
+  holds nothing at risk, so it fired permanently, and a permanent worried face is one nobody reads.
+  It now fires on loose work in a repo with no commits at all, where the files really are the only
+  copy. A clean tree gets the happy face. Reasoning is written above `moodOf()` in `tack.js`.
+  **And "home" is `C:\Users\fonte\Projects\Home`** — an abandoned `git init` holding exactly one
+  file, `.claude/settings.local.json`, which is per-machine permission grants and shouldn't be
+  committed anywhere. So there is nothing to first-commit: it is correctly listed as "no commits
+  yet" and correctly does not worry him. (Located 5 Sep 2026 while inventorying repos for backup.)
 - Is there a way to see unmerged branches?
 - Is it possible to make the Tack log command navigatable by arrow key?
 - How doable is a hotkey command line for tack that might jump a single line onto the screen to allow for quick commands, such as ctrl + l (or whatever) 'tack open wishlist.md'?
