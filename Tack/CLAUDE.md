@@ -290,6 +290,28 @@ own author field cannot tell them apart. What can is the `Committed with Tack.` 
 That is a fact being read off the message, not intent being inferred — which is the distinction
 the live gate is about, one section down. Tack does not guess who did anything.
 
+#### A trailer is a whole line, and this tool got it wrong about itself
+
+The test was `body.indexOf()`, a substring search over the whole message, so any commit that
+*discussed* the trailer was read as one that carried it. Measured against the live tree: **60
+commits match as a substring and 58 carry it on its own line.** Both of the extras are commits
+explaining the convention, and one of them is `1f679af` — *the commit that introduced this very
+marking*, whose body reads "Which commits are yours is read off the `Committed with Tack.` trailer,
+because …". The feature misattributed its own birth certificate for a fortnight.
+
+**The general form is worth more than the fix.** Every doc and commit message in this tree writes
+about these conventions constantly, so a substring check makes the tree unable to describe itself
+without lying about who wrote it. `hasTrailer()` in `tack.js` is the one definition of what a
+signature is, and `write.js` uses it too — because the writer had the same bug from the other end:
+a message that merely mentioned the trailer was treated as already signed, so the real one was
+never appended and the commit came out **unsigned**. Two mutants restore the substring, one at each
+end, and a third drops the `trim()`.
+
+Cairn hit the identical bug on 6 Sep 2026 and caught it within the hour by running `cairn commits`
+and reading the top row. This is the same fix one repo over, found by reading its commit message
+and asking whether Tack had it too. **When a neighbouring tool in this tree publishes a bug of
+shape X, the question is not whether X is interesting — it is whether we have X.**
+
 ### A count it refused to make
 
 The first draft printed `60 older not shown`. The suite caught it, and the reason is worth keeping.
@@ -390,7 +412,7 @@ Tack/
   tack.cmd           the shim, so it is one word instead of a path
   Look.bat           double-click: the glance
   Sit.bat            double-click: the pane
-  tools/selftest.js  506 assertions + 111 mutants across all five files
+  tools/selftest.js  514 assertions + 114 mutants across all five files
 ```
 
 The split is the security model, not tidiness. `tack.js` runs on every glance and has no
@@ -620,5 +642,10 @@ row, six assertions and three mutants — by **CTown 9** (Opus 5), 28 Aug 2026, 
 wishlist note that a clean tree should get the happy one. He was right about the symptom and the
 cause turned out to be one line further back than either of us expected: the trigger was not
 mis-tuned, it was pointed at a condition that could not ever mean anything.
+
+The whole-line trailer rule — `hasTrailer()`, the writer's half of the same bug, 8 assertions and
+3 mutants — by **Tack 1** (Opus 5), 6 Sep 2026. Found by reading CTown 9's commit on the identical
+bug in Cairn and checking whether Tack had it, which it did, and which two commits in the live
+history proved before anything was changed.
 
 Same convention as the rest of the tree: **if you change something here, add yourself.**

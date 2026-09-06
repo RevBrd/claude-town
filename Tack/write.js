@@ -127,8 +127,14 @@ function defaultMessage(files) {
 
 var TRAILER = 'Committed with Tack.';
 
+/* The same whole-line rule as the reader, and for a reason that only shows up
+ * from this side: with a substring test, a message that merely MENTIONS the
+ * trailer mid-sentence was treated as already signed, so the real trailer was
+ * never appended and the commit came out unsigned. The reader and the writer
+ * share TK.hasTrailer so they cannot drift into disagreeing about what counts
+ * as a signature. */
 function withTrailer(message) {
-  if (message.indexOf(TRAILER) !== -1) return message;
+  if (TK.hasTrailer(message, TRAILER)) return message;
   return message.replace(/\s+$/, '') + '\n\n' + TRAILER + '\n';
 }
 

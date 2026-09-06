@@ -519,6 +519,16 @@ function suite(TK, W, SIT, U, O) {
   ok(withT.indexOf(W.TRAILER) !== -1, 'and the trailer is appended');
   eq(W.withTrailer(withT), withT, 'appending twice does not double the trailer');
 
+  /* The writer's half of the whole-line rule. With a substring test a message
+   * that merely mentions the trailer was treated as already signed, so the real
+   * trailer never got appended and the commit came out unsigned -- the same bug
+   * seen from the other end. */
+  var mentioned = W.withTrailer('explain why ' + W.TRAILER + ' is a whole line');
+  ok(mentioned.split('\n').some(function (ln) { return ln.trim() === W.TRAILER; }),
+     'a message that only mentions the trailer still gets a real one');
+  eq(mentioned.split('\n').filter(function (ln) { return ln.trim() === W.TRAILER; }).length,
+     1, 'and exactly one of them');
+
   section('committing, for real');
 
   var wrepo = tmp('writable');
@@ -1124,6 +1134,27 @@ function suite(TK, W, SIT, U, O) {
     ['h3', 'h3s', '1700000120', 'Test', 'third subject',
      'a body that contains ' + U1 + ' a unit separator'].join(U1) + R1 + '\n';
 
+  /* A TRAILER IS A WHOLE LINE. Every doc and commit message in this tree writes
+   * about these conventions constantly, so a substring test makes the tree
+   * unable to describe itself without lying about who wrote it -- and it did:
+   * `1f679af`, the commit that introduced this marking, discusses the trailer
+   * in its body and was therefore read as carrying it. */
+  ok(TK.hasTrailer('a\n' + TK.TACK_TRAILER + '\nb', TK.TACK_TRAILER),
+     'a trailer on its own line is a signature');
+  ok(TK.hasTrailer('a\n   ' + TK.TACK_TRAILER + '  \nb', TK.TACK_TRAILER),
+     'and surrounding whitespace does not hide it');
+  ok(!TK.hasTrailer('read off the ' + TK.TACK_TRAILER + ' trailer, because',
+                    TK.TACK_TRAILER),
+     'but the same words mid-sentence are a mention, not a signature');
+  ok(!TK.hasTrailer('', TK.TACK_TRAILER), 'an empty body carries nothing');
+  ok(!TK.hasTrailer(null, TK.TACK_TRAILER), 'and neither does a missing one');
+
+  var mentions = ['h4', 'h4s', '1700000180', 'Test', 'fourth subject',
+    'the marking is read off the ' + TK.TACK_TRAILER +
+    ' trailer, because git authors everything as RevBrd'].join(U1) + R1 + '\n';
+  eq(TK.parseLog(mentions)[0].tack, false,
+     'a commit that only explains the trailer is not claimed as yours');
+
   var parsed = TK.parseLog(logFixture);
   eq(parsed.length, 3, 'three commits parse out');
   eq(parsed[0].subject, 'first subject', 'the subject survives');
@@ -1520,6 +1551,10 @@ var MUTANTS = [
 /* The write layer's guarantees. Every one of these is a thing somebody could
  * remove while believing they were simplifying. */
 var MUTANTS_WRITE = [
+  ['a message mentioning the trailer is treated as already signed',
+   "  if (TK.hasTrailer(message, TRAILER)) return message;",
+   "  if (message.indexOf(TRAILER) !== -1) return message;"],
+
   ['the wholesale-pathspec check is removed',
    "  for (var i = 0; i < args.length; i++) {\n    if (WHOLESALE.indexOf(args[i]) !== -1) {",
    "  for (var i = 0; i < args.length; i++) {\n    if (false) {"],
@@ -1581,7 +1616,7 @@ var MUTANTS_WRITE = [
    "    if (false) break;"],
 
   ['the trailer is appended every time',
-   "  if (message.indexOf(TRAILER) !== -1) return message;",
+   "  if (TK.hasTrailer(message, TRAILER)) return message;",
    "  if (false) return message;"]
 ].map(function (m) { return { file: 'write.js', name: m[0], from: m[1], to: m[2] }; });
 
@@ -1788,8 +1823,19 @@ var MUTANTS_LOG = [
    "    var body = f[5];"],
 
   ['the trailer test is inverted, so every commit claims to be yours',
-   "      tack:    body.indexOf(TACK_TRAILER) !== -1",
-   "      tack:    body.indexOf(TACK_TRAILER) === -1"],
+   "      tack:    hasTrailer(body, TACK_TRAILER)",
+   "      tack:    !hasTrailer(body, TACK_TRAILER)"],
+
+  /* The 6 Sep 2026 fix, from both ends. A substring test reads any commit that
+   * DISCUSSES the trailer as one that carries it, which is how this tool came
+   * to misattribute the commit that introduced the marking. */
+  ['a trailer is a substring again, so mentioning it signs the commit',
+   "    if (lines[i].trim() === trailer) return true;",
+   "    if (lines[i].indexOf(trailer) !== -1) return true;"],
+
+  ['the whole-line test ignores surrounding whitespace it should trim',
+   "    if (lines[i].trim() === trailer) return true;",
+   "    if (lines[i] === trailer) return true;"],
 
   ['a repo with no commits is reported as broken rather than empty',
    "    if (!head.ok) { rec.empty = true; return rec; }",

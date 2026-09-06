@@ -350,6 +350,32 @@ var TACK_TRAILER = 'Committed with Tack.';
 
 var LOG_FORMAT = ['%H', '%h', '%ct', '%an', '%s', '%b'].join(LOG_UNIT) + LOG_REC;
 
+/* A TRAILER IS A WHOLE LINE, NEVER A SUBSTRING, and this tool proved it on
+ * itself. The test used to be body.indexOf(), a substring search over the whole
+ * message -- so any commit whose body *discusses* the trailer was read as one
+ * that carries it. Measured against the live tree: 60 commits match as a
+ * substring, 58 carry it on its own line, and both of the extras are commits
+ * explaining the convention. One of them is `1f679af`, the commit that
+ * introduced this very marking, whose body says "Which commits are yours is
+ * read off the `Committed with Tack.` trailer, because ..." -- so the feature
+ * misattributed its own birth certificate for a fortnight.
+ *
+ * The general form is worth more than the fix: every doc and commit message in
+ * this tree writes about these conventions constantly, so a substring check
+ * makes the tree unable to describe itself without lying about who wrote it.
+ *
+ * One definition, used by the reader here and by the writer in write.js, so
+ * the two halves cannot drift into disagreeing about what a signature is.
+ * (Cairn hit the identical bug on 6 Sep 2026 and caught it within the hour;
+ * this is the same fix one repo over.) */
+function hasTrailer(text, trailer) {
+  var lines = String(text === null || text === undefined ? '' : text).split('\n');
+  for (var i = 0; i < lines.length; i++) {
+    if (lines[i].trim() === trailer) return true;
+  }
+  return false;
+}
+
 function parseLog(text) {
   var out = [];
   var recs = String(text).split(LOG_REC);
@@ -369,7 +395,7 @@ function parseLog(text) {
       who:     f[3],
       subject: f[4],
       body:    body,
-      tack:    body.indexOf(TACK_TRAILER) !== -1
+      tack:    hasTrailer(body, TACK_TRAILER)
     });
   }
   return out;
@@ -1290,6 +1316,7 @@ module.exports = {
   renderLog: renderLog, renderCommit: renderCommit, renderPickCommit: renderPickCommit,
   matchedLabel: matchedLabel,
   paintDiff: paintDiff, countRepos: countRepos, TACK_TRAILER: TACK_TRAILER,
+  hasTrailer: hasTrailer,
   parseStatusV2: parseStatusV2, describe: describe, findRepos: findRepos,
   discover: discover, loadRoots: loadRoots, expandHome: expandHome,
   labelFor: labelFor, readRepo: readRepo, sweep: sweep, sweepPaths: sweepPaths, rank: rank,
