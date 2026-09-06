@@ -515,7 +515,7 @@ Tack/
   tack.cmd           the shim, so it is one word instead of a path
   Look.bat           double-click: the glance
   Sit.bat            double-click: the pane
-  tools/selftest.js  620 assertions + 132 mutants across all six files
+  tools/selftest.js  629 assertions + 137 mutants across all six files
 ```
 
 The split is the security model, not tidiness. `tack.js` runs on every glance and has no
@@ -590,6 +590,36 @@ Three mutants guard the result, from both directions: the old trigger restored, 
 unreachable, and the row's warning dropped. The second matters as much as the first — that is how
 a fix like this rots, with the bad state no longer firing and nobody noticing the good one never
 started.
+
+### The pane's face answers a different question, and the report screen had never been given one
+
+The rule above — *Tack is asked exactly one question, what is loose, and the face is the answer to
+it* — is about **the glance**. In the pane the face has always tracked the **view** instead: alert
+when the open repo is live, pleased while reading history. That is not the rule bending; the pane is
+a place you are doing something rather than a readout you glance at, and a face that ignored the
+screen you were on would be the decoration this file spends a section warning about.
+
+`done` — the screen you land on after committing, putting back, or sending — was the one view that
+had never been given its share of that. It had **no header of its own**, so it borrowed the file
+list's, which assumes a repo is open and carries the live warning; and its mood fell through to
+`moodOf()` on a sweep taken **before** the thing it is reporting on. So a commit that had just
+succeeded was drawn with the pre-commit face, captioned *"someone may be editing in here right
+now"* — which was true, and was you, and is the wrong thing to say to somebody who has just
+finished. It also crashed outright once `p` made the screen reachable with no repo open.
+
+It now says `done` or `nothing changed`, and the face is `pleased` or `alert` accordingly. Five
+mutants, from both directions again: the old mood restored, the happy face made unconditional (which
+would report a failure as a success — the worse of the two, and the one a fix aimed only at the
+first would leave behind), the header removed, a failed commit reporting success, and the refresh
+dropped.
+
+**And leaving the report now re-reads whichever list is coming back.** The file list already did;
+the repo list did not, so after a push the arrow still showed the count from before it — a stale
+number on the one screen whose whole job is to say what has not been sent yet.
+
+*(Trevor's wishlist, 28 Aug 2026: "makes a happy face after making a commit". Diagnosed and built
+6 Sep. As with the `puzzled` fix before it, the symptom was a mood and the cause was one line
+further back — the mood was not mis-tuned, it was being computed from the wrong moment.)*
 
 ## Three decisions worth keeping
 
@@ -768,5 +798,10 @@ take the unsafe one. Two things the tests found rather than the reading: the pus
 reachable from the **repo** list, where no repo is open, so it needed a header of its own; and the
 stale-picture check wanted a shape of its own here, since the thing that goes stale is a count
 rather than a file.
+
+The face on the report screen — the `done` view's own header and mood, the refresh behind it,
+9 assertions and 5 mutants — by **Tack 1**, the same day, off the oldest item on Trevor's wishlist.
+It is the second time in this file that a wishlist entry about a face turned out to be a bug about
+*when* the face was computed rather than *what* it was computed from.
 
 Same convention as the rest of the tree: **if you change something here, add yourself.**

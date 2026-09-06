@@ -1716,6 +1716,53 @@ function suite(TK, W, SIT, U, O, P) {
   eq(rawGit(pbare, ['rev-list', '--count', 'master']).stdout.trim(), '2',
      'and the far end is untouched by any of it');
 
+  section('the face on the report screen');
+
+  /* Trevor's wishlist, 28 Aug 2026: "makes a happy face after making a commit".
+   * It turned out not to be a mood that wanted tuning -- the `done` view had no
+   * header of its own, so it borrowed the file list's (which assumes a repo is
+   * open, and carries the live warning) and a mood computed from a sweep taken
+   * BEFORE the commit it was reporting. A successful commit was drawn with the
+   * pre-commit face, captioned "someone may be editing in here right now",
+   * which was true, and was you. */
+  var froot = tmp('face-root');
+  var fwork = path.join(froot, 'work');
+  fs.mkdirSync(fwork, { recursive: true });
+  rawGit(fwork, ['init', '-q']);
+  rawGit(fwork, ['config', 'user.email', 't@x']);
+  rawGit(fwork, ['config', 'user.name', 'tester']);
+  fs.writeFileSync(path.join(fwork, 'seed.txt'), 'seed\n');
+  rawGit(fwork, ['add', 'seed.txt']);
+  rawGit(fwork, ['commit', '-qm', 'seed']);
+  fs.writeFileSync(path.join(fwork, 'new.txt'), 'new\n');
+
+  var fcfg = path.join(froot, 'roots.json');
+  fs.writeFileSync(fcfg, JSON.stringify({ roots: [{ path: froot, depth: 2 }], skip: ['.git'] }));
+
+  var fsit = new SIT.Sitting(fcfg, 'work');
+  eq(fsit.view, 'files', 'the pane opens on the file list');
+  fsit.key(' ');
+  fsit.key('c');
+  fsit.key('\r');
+  eq(fsit.view, 'done', 'and the commit lands on the report');
+
+  var rep1 = fsit.draw();
+  ok(rep1.indexOf('^ ^') !== -1, 'a commit that worked gets the happy face');
+  ok(rep1.indexOf('someone may be editing') === -1,
+     'and is not captioned with a warning about the edit it just saved');
+  ok(rep1.indexOf('committed 1 file') !== -1, 'and says what it did');
+  eq(fsit.done.ok, true, 'and knows that it worked');
+
+  /* And the other direction, which is how a fix like this rots -- the bad face
+   * stops firing and nobody notices the good one never started. */
+  fsit.key(' ');
+  eq(fsit.view, 'files', 'any key carries on');
+  fsit.done = null;
+  fsit.reportPush({ ok: false, reason: 'made up, for the face' });
+  var rep2 = fsit.draw();
+  ok(rep2.indexOf('O O') !== -1, 'and something that failed does not');
+  ok(rep2.indexOf('nothing changed') !== -1, 'and says so in the header');
+
 }
 
 /* ---------------------------------------------------------------- mutation */
@@ -2271,6 +2318,31 @@ var MUTANTS_SITPUSH = [
    "      L.push(mark + body + ('') +"]
 ].map(function (m) { return { file: 'sit.js', name: m[0], from: m[1], to: m[2] }; });
 
+var MUTANTS_FACE = [
+  /* Both directions. The first restores the old behaviour; the second makes the
+   * happy face unconditional, which would report a failure as a success -- the
+   * worse of the two, and the one a fix aimed only at the first would leave. */
+  ['the report screen goes back to the mood of the tree before the commit',
+   "    : this.view === 'done' ? (this.done && this.done.ok ? 'pleased' : 'alert')",
+   "    : this.view === 'done' ? TK.moodOf(s)"],
+
+  ['the report screen is pleased whether it worked or not',
+   "    : this.view === 'done' ? (this.done && this.done.ok ? 'pleased' : 'alert')",
+   "    : this.view === 'done' ? 'pleased'"],
+
+  ['the report screen borrows the file list header again',
+   "  if (this.view === 'done') {",
+   "  if (false) {"],
+
+  ['a failed commit still reports that it worked',
+   "  this.done = { ok: !!res.ok };\n  this.view = 'done';\n};\n\nSitting.prototype.doCommit = function () {",
+   "  this.done = { ok: true };\n  this.view = 'done';\n};\n\nSitting.prototype.doCommit = function () {"],
+
+  ['leaving the report leaves a stale count behind it',
+   "    if (this.repo) this.reopen(); else this.refresh();",
+   "    if (this.repo) this.reopen();"]
+].map(function (m) { return { file: 'sit.js', name: m[0], from: m[1], to: m[2] }; });
+
 var MUTANTS_SITLOG = [
   ['the history view falls through to the keys that pick and commit',
    "  if (v === 'history') {",
@@ -2300,7 +2372,7 @@ var MUTANTS_SITLOG = [
    "    var cbody = (cm.body || '').split('\\n').filter(function (line) {\n      return line.trim() !== TK.TACK_TRAILER; });",
    "    var cbody = (cm.body || '').split('\\n');"]
 ].map(function (m) { return { file: 'sit.js', name: m[0], from: m[1], to: m[2] }; });
-MUTANTS = MUTANTS.concat(MUTANTS_PUSH, MUTANTS_SITPUSH, MUTANTS_WRITE, MUTANTS_SIT, MUTANTS_UNDO, MUTANTS_SIT2,
+MUTANTS = MUTANTS.concat(MUTANTS_PUSH, MUTANTS_SITPUSH, MUTANTS_FACE, MUTANTS_WRITE, MUTANTS_SIT, MUTANTS_UNDO, MUTANTS_SIT2,
                          MUTANTS_OPEN, MUTANTS_TACK2, MUTANTS_LOG, MUTANTS_SITLOG,
                          MUTANTS_AGO);
 

@@ -44,6 +44,7 @@ function Sitting(cfgFile, startQuery) {
   this.logFrom   = 'repos'; // which list `l` was pressed from, so q goes back there
   this.commit    = null;    // the one commit being looked at
   this.pushing   = null;    // the repo waiting on a push confirmation
+  this.done      = null;    // { ok } -- whether the thing that just happened worked
   this.refresh();
 
   if (startQuery) {
@@ -149,13 +150,37 @@ Sitting.prototype.draw = function () {
     ? (this.repo && this.repo.live ? 'alert' : 'awake')
     : (this.view === 'history' || this.view === 'commit') ? 'pleased'
     : this.view === 'push' ? 'awake'
+    /* The report screen answers "did that work", which is a different question
+     * from "what is loose" -- and answering it is the whole of the wishlist
+     * item that asked for a happy face after a commit.
+     *
+     * This is not the glance's rule bending. In the GLANCE, Tack is asked
+     * exactly one question and the face is the answer to it. In the PANE the
+     * face has always tracked the VIEW instead -- alert when the open repo is
+     * live, pleased while reading history -- because the pane is a place you
+     * are doing something rather than a readout you glance at. `done` was the
+     * one view that had never been given its share of that, so it fell through
+     * to a mood computed from a sweep taken BEFORE the thing it is reporting
+     * on. A successful commit was drawn with the pre-commit face. */
+    : this.view === 'done' ? (this.done && this.done.ok ? 'pleased' : 'alert')
     : TK.moodOf(s);
   var l1, l2;
   /* The push confirmation gets its own header, because it is reachable from
    * the REPO list as well as the file list -- so the header below it, which
    * assumes a repo is open, is not available here. Caught by the suite the
    * first time the pane was driven from the repo list. */
-  if (this.view === 'push') {
+  if (this.view === 'done') {
+    /* Its own header, for the same reason `push` needed one: this view is
+     * reachable with no repo open, and the header further down assumes one.
+     * It also used to inherit that header's live warning -- so a commit that
+     * had just succeeded was captioned "someone may be editing in here right
+     * now", which is true, and is you, and is the wrong thing to say to
+     * somebody who has just finished. */
+    l1 = C.body('tack') + C.dim(' · ') +
+         (this.done && this.done.ok ? C.good('done') : C.alert('nothing changed'));
+    l2 = C.dim(this.done && this.done.ok ? 'that part is saved'
+                                         : 'and nothing was lost');
+  } else if (this.view === 'push') {
     l1 = C.body(this.pushing.label) + C.dim('  ·  sending');
     l2 = C.dim('to ') + C.body(this.pushing.dest.remote) +
          C.dim(' · nothing here changes either way');
@@ -399,6 +424,7 @@ Sitting.prototype.reportPutBack = function (res) {
   this.notice = L.join('\n  ');
   this.typed = '';
   this.pending = null;
+  this.done = { ok: !!res.ok };
   this.view = 'done';
 };
 
@@ -427,6 +453,7 @@ Sitting.prototype.doPush = function (repo) {
    * locked remote, a branch behind its mirror, nothing to send. None of them
    * is an error and none of them gets a screen of its own. */
   this.notice = C.chrome(repo.label + ' — ' + res.reason);
+  this.done = { ok: false };
   this.view = 'done';
 };
 
@@ -481,6 +508,7 @@ Sitting.prototype.reportPush = function (res, pend) {
   }
   this.notice = L.join('\n  ');
   this.pushing = null;
+  this.done = { ok: !!res.ok };
   this.view = 'done';
 };
 
@@ -499,6 +527,7 @@ Sitting.prototype.doCommit = function () {
   }
   this.message = '';
   this.pending = null;
+  this.done = { ok: !!res.ok };
   this.view = 'done';
 };
 
@@ -561,8 +590,17 @@ Sitting.prototype.key = function (k) {
     return true;
   }
 
-  if (v === 'done') { this.view = this.repo ? 'files' : 'repos';
-                      this.notice = ''; if (this.repo) this.reopen(); return true; }
+  if (v === 'done') {
+    this.view = this.repo ? 'files' : 'repos';
+    this.notice = '';
+    this.done = null;
+    /* Re-read whichever list is coming back. The file list already did this;
+     * the repo list did not, so after a push from it the arrow still showed
+     * the count from before the push -- a stale number on the one screen whose
+     * job is to say what has not been sent. */
+    if (this.repo) this.reopen(); else this.refresh();
+    return true;
+  }
 
   if (k === 'q' || k === '\x1b') {
     if (v === 'files') { this.view = 'repos'; this.repo = null; this.notice = '';
