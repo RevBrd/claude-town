@@ -16,7 +16,7 @@ terminal. Or double-click **`Look.bat`** for the glance and **`Sit.bat`** for th
 |---|---|
 | `tack` | the glance — what is loose, everywhere. Prints under your prompt and gets out of the way |
 | `tack show NAME` | the file list for one repo |
-| `tack sit [NAME]` | the pane — pick files, commit them |
+| `tack sit [NAME]` | the pane — pick files, commit them, send them on |
 | `tack log [NAME]` | what happened, everywhere or in one repo, newest first |
 | `tack log HASH` | one commit — what it touched. `-p` for the diff |
 | `tack one` | a single line, for a status bar |
@@ -158,6 +158,107 @@ sweep as loose work and could end up in a commit.
 `discard`, in full. A keypress is something you can do by accident while looking somewhere else; a
 word is not, and the word is the actual name of the operation, so typing it means having read it.
 There is a mutant that shortens it to `y`.
+
+## Pushing
+
+`p` in the pane. There is no `tack push` command and that is deliberate — the glance prints under
+your prompt and costs nothing, which is a property you can confirm by reading one file, and verbs
+belong in the mode you enter on purpose.
+
+**Why this is allowed at all**, given that this document said pushing "is the one action here that
+leaves the machine" and should not become a verb without a conversation. The conversation happened,
+and the objection turned out to rest on a conflation that Codeville 5 took apart on 5 Sep 2026:
+
+> **Pushing is not publishing.** Every repo in this tree is private. The event that publishes is
+> flipping a repo's visibility, which no push performs and no hook can guard. A push to a private
+> mirror **replicates**; it does not disclose.
+
+That moves push out of the disclosure class and into the replication class — the same class as the
+attic. And the positive case is stronger than "it is allowed": the `↑` counts in the glance are the
+only place in this tree where backup drift across ten repos is visible at once, and until now there
+was nothing you could do about it from there. That is Tack's one idea with the last step missing.
+
+### The destination is inherited, never chosen
+
+**This is the heart of the design.** Tack takes where a push goes from the branch's own upstream and
+offers no way to name a remote or a URL. Choosing where work goes is a decision, and somebody has
+already made it, in git's own configuration, on purpose.
+
+What that buys is clearest in the one repo where it matters. `Games` has two remotes: `origin`, the
+release repo, locked with a dead push URL since 15 Aug 2026; and `backup`, a private mirror added
+5 Sep. Codeville 5 pointed `master` at `backup` so that the safe action is the default. Because Tack
+pushes only to upstream, **Tack cannot reach the release repo at all — while knowing nothing
+whatsoever about Games.** It inherits the routing decision instead of re-making it, which is the
+same reason `roots.json` lists roots and lets the filesystem answer what is inside them.
+
+A tool that accepted `tack push games origin` would have to know which remotes are dangerous. This
+one does not need to know, and cannot be wrong. There is an assertion that adds a second, locked
+remote to a fixture and checks it does not become reachable by existing.
+
+### What it cannot express
+
+`push.js` is the only file that can reach the network, and it carries the fourth allowlist —
+`PUSH_VERBS = ['push']`, asserted by value like the other three. `FORBIDDEN` is everything that
+would make a push something other than *add my commits to the end of what is already there*:
+
+- **`--force`, `-f`, `--force-with-lease`, `--force-if-includes`, `--mirror`, `--prune`, `--delete`.**
+  A fast-forward push cannot destroy anything at the destination. These can, and the destination is
+  the backup — the copy that exists because the local one might not be. Discarding a change in the
+  working tree at least leaves a copy in the attic. **There is no attic on the far end.** A refspec
+  beginning with `+` is a forced update spelled a second way and is refused separately, because it
+  would sail straight past a list of option names.
+- **`--no-verify`.** The important one. `Games` carries a `pre-push` hook that is Trevor's release
+  lock, written in his own voice, saying *"Ask Trevor first"*. Codeville 5 met that hook, stopped,
+  and asked rather than routing around it. That was the right call, and it is exactly the call a
+  tool must not be able to get wrong — **Tack is structurally incapable of doing what a careful
+  session chose not to do.** There is a mutant that removes this one flag from the list on its own.
+- **`--repo`, `--exec`, `--receive-pack`, `--set-upstream`.** The first two redirect; the next two
+  run a program on the far end; the last changes where the branch points in future, which is the
+  decision Tack does not make.
+
+In practice `pushUpstream` passes `['push']` and nothing else, so `FORBIDDEN` currently guards a
+door that is walled up. That is the point: the wall is a decision this pass made, and the guard is
+what notices if a later pass takes it down without meaning to.
+
+### The second verb, and why it is guarded twice
+
+Naming the destination needs its URL, so `push.js` may also run `git remote` — which can add,
+rename and delete remotes. The verb alone is not a guard, so the **subcommand** is guarded too:
+`LOOKUP_SUB = 'get-url'`, and anything else throws. This is the `tack log <ref>` lesson arriving
+before the bug rather than after it.
+
+The ahead and behind counts cost no verb at all: `git status --branch` already reports them and
+`readRepo` already parses them.
+
+### Four answers that are not errors
+
+A `no` here is usually somebody's decision, and each gets its own word rather than a stack trace:
+
+| | |
+|---|---|
+| `no upstream` | this branch tracks nothing, so there is nowhere to send it. Setting that up is a decision |
+| `locked` | the push address is not a URL — `Games/origin` is literally `no_push`. That is how a remote is deliberately disarmed, so Tack reports it and does not undo it |
+| `behind` | the far end holds commits this machine has not seen. Tack has no verb for pulling and says so, rather than letting git suggest `--force` |
+| `nothing to push` | everything here is already there |
+
+### The screen names the URL, not the remote
+
+The whole lesson of this tree's publication lock is that `origin` tells you nothing about where a
+push lands — the address does. So the confirmation shows the URL, the count, **and the subjects of
+the commits that are going**, because a count is a number and the subjects are what let you
+recognise whether it is the work you think it is.
+
+It is a keypress, not the typed word. Nothing here destroys anything: the local copy is untouched
+and the far end only gains commits. `discard` belongs to the one operation that does destroy work,
+and spending it here would be the confirmation-you-click-through failure `undo.js` already names.
+
+**The stale-picture contract applies, in the shape this verb needs it.** The screen says *3
+commits*; if another session commits a fourth before you press enter, the sentence you agreed to is
+not the sentence being carried out. It re-reads and refuses, naming both numbers.
+
+**And a hook that refuses is quoted, not summarised.** Games' hook is a message from Trevor to
+whoever is holding the tool. Flattening it into "push failed" would throw away the only part that
+matters, so its own words are handed back whole.
 
 ## The back door
 
@@ -407,12 +508,14 @@ Tack/
   sit.js             the pane -- drawing and keys, including the two read-only
                      history views. Pure enough to test without a terminal
   undo.js            the only file that can destroy work. One verb, and the attic
+  push.js            the only file that can reach the network. One verb, and a
+                     second one it may only ever use to ask a URL
   open.js            the back door -- find a file, refuse to run it, hand it over
   roots.json         the only hand-written list: roots, never repos
   tack.cmd           the shim, so it is one word instead of a path
   Look.bat           double-click: the glance
   Sit.bat            double-click: the pane
-  tools/selftest.js  514 assertions + 114 mutants across all five files
+  tools/selftest.js  620 assertions + 132 mutants across all six files
 ```
 
 The split is the security model, not tidiness. `tack.js` runs on every glance and has no
@@ -596,9 +699,17 @@ argument guard is the model to copy, not the verb list.
 **KSP Tools' `package-lock.json` has been loose for three weeks** and is probably an accident. Tack
 reports it; deciding is Trevor's.
 
-**Games is 225+ commits ahead of `github.com/RevBrd/browser-games`** with `push = no_push` set
-deliberately. Tack shows the `↑` count. Pushing is not a verb it has and should not become one
-without a conversation — it is the one action here that leaves the machine.
+**Pushing is done** (6 Sep 2026) — see *Pushing* above. The paragraph that used to sit here said
+it "should not become a verb without a conversation", and the conversation is the section above.
+The Games situation it described has moved on and is worth restating correctly: `master` tracks
+`backup`, a private mirror, so `git status` no longer shows drift against the release repo, and the
+release lock on `origin` is untouched and still Trevor's. Tack pushes to the mirror and cannot
+reach the other one.
+
+**Nothing Tack does can destroy anything at the far end either.** The property this file already
+claimed — no path through this program ends with a file gone that was there before — now extends
+across the network: every push is a fast-forward, and every way of spelling *force* is
+inexpressible rather than refused.
 
 ## Credits
 
@@ -647,5 +758,15 @@ The whole-line trailer rule — `hasTrailer()`, the writer's half of the same bu
 3 mutants — by **Tack 1** (Opus 5), 6 Sep 2026. Found by reading CTown 9's commit on the identical
 bug in Cairn and checking whether Tack had it, which it did, and which two commits in the live
 history proved before anything was changed.
+
+Pushing — `push.js`, the fourth allowlist, the pane's `p`, and 106 more assertions with 18 more
+mutants — by **Tack 1** (Opus 5), 6 Sep 2026. Trevor asked for it on Codeville 5's recommendation.
+The design that made it comfortable to build is the one about inheriting the destination rather than
+accepting one, which falls out of Codeville 5's own decision to point `Games/master` at the backup:
+because the safe route was already the default, a tool that only ever follows the default cannot
+take the unsafe one. Two things the tests found rather than the reading: the push confirmation is
+reachable from the **repo** list, where no repo is open, so it needed a header of its own; and the
+stale-picture check wanted a shape of its own here, since the thing that goes stale is a count
+rather than a file.
 
 Same convention as the rest of the tree: **if you change something here, add yourself.**

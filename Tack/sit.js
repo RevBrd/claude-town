@@ -11,6 +11,7 @@
 var TK = require('./tack.js');
 var W  = require('./write.js');
 var U  = require('./undo.js');
+var P  = require('./push.js');
 var C  = TK.C;
 
 /* Typed in full to discard. A keypress is something you can do by accident
@@ -42,6 +43,7 @@ function Sitting(cfgFile, startQuery) {
   this.logCursor = 0;
   this.logFrom   = 'repos'; // which list `l` was pressed from, so q goes back there
   this.commit    = null;    // the one commit being looked at
+  this.pushing   = null;    // the repo waiting on a push confirmation
   this.refresh();
 
   if (startQuery) {
@@ -146,9 +148,18 @@ Sitting.prototype.draw = function () {
   var mood = this.view === 'files'
     ? (this.repo && this.repo.live ? 'alert' : 'awake')
     : (this.view === 'history' || this.view === 'commit') ? 'pleased'
+    : this.view === 'push' ? 'awake'
     : TK.moodOf(s);
   var l1, l2;
-  if (this.view === 'history' || this.view === 'commit') {
+  /* The push confirmation gets its own header, because it is reachable from
+   * the REPO list as well as the file list -- so the header below it, which
+   * assumes a repo is open, is not available here. Caught by the suite the
+   * first time the pane was driven from the repo list. */
+  if (this.view === 'push') {
+    l1 = C.body(this.pushing.label) + C.dim('  ·  sending');
+    l2 = C.dim('to ') + C.body(this.pushing.dest.remote) +
+         C.dim(' · nothing here changes either way');
+  } else if (this.view === 'history' || this.view === 'commit') {
     l1 = C.body(this.log.label) + C.dim('  ·  history');
     l2 = C.dim(this.log.commits.length + ' most recent · newest ' +
                TK.agoPhrase(this.log.commits[0].when, Date.now()));
@@ -179,10 +190,11 @@ Sitting.prototype.draw = function () {
                : r.error ? C.alert(pad(name, w)) + C.alert('  unreadable')
                : r.empty ? C.chrome(pad(name, w)) + C.chrome('  no commits yet')
                          : C.dim(pad(name, w)) + C.dim('  clean');
-      L.push(mark + body + (r.live ? C.live('   live') : ''));
+      L.push(mark + body + (r.ahead ? C.chrome('  \u2191' + r.ahead) : '') +
+             (r.live ? C.live('   live') : ''));
     });
     L.push('');
-    L.push('  ' + C.dim('↑↓ move · enter open · l history · r refresh · q quit'));
+    L.push('  ' + C.dim('↑↓ move · enter open · l history · p push · r refresh · q quit'));
 
   } else if (this.view === 'files') {
     this.repo.files.forEach(function (f, i) {
@@ -198,7 +210,7 @@ Sitting.prototype.draw = function () {
     var n = this.selected().length;
     L.push('  ' + C.dim('space pick · a all · c commit · u put back') +
            (n ? C.warm('  (' + n + ' picked)') : '') +
-           C.dim(' · l history · r refresh · q back'));
+           C.dim(' · l history · p push · r refresh · q back'));
 
   } else if (this.view === 'history') {
     this.log.commits.forEach(function (c, i) {
@@ -241,6 +253,26 @@ Sitting.prototype.draw = function () {
     L.push('');
     L.push('  ' + C.dim('the diff: ') + C.chrome('tack log ' + cm.short + ' -p'));
     L.push('  ' + C.dim('q back'));
+
+  } else if (this.view === 'push') {
+    var pu = this.pushing;
+    L.push('  ' + C.body('send ' + pu.ahead + ' commit' + (pu.ahead === 1 ? '' : 's') +
+           ' from ' + pu.label));
+    L.push('');
+    pu.subjects.forEach(function (sub) { L.push('    ' + C.dim(clip(sub, 62))); });
+    if (pu.ahead > pu.subjects.length) {
+      L.push('    ' + C.dim('and ' + (pu.ahead - pu.subjects.length) + ' more'));
+    }
+    L.push('');
+    /* THE URL, not the remote's local name. The whole lesson of this tree's
+     * publication lock is that `origin` tells you nothing about where a push
+     * lands -- the address does. */
+    L.push('  ' + C.dim('to  ') + C.body(pu.dest.remote) + C.dim('  ' + pu.dest.url));
+    L.push('');
+    L.push('  ' + C.dim('this adds them to the end of what is already there. It cannot'));
+    L.push('  ' + C.dim('overwrite anything, and it does not change anything here.'));
+    L.push('');
+    L.push('  ' + C.dim('enter to send · esc to back out'));
 
   } else if (this.view === 'message') {
     var picked = this.selected();
@@ -370,6 +402,88 @@ Sitting.prototype.reportPutBack = function (res) {
   this.view = 'done';
 };
 
+/* `p` from either list. The destination is never asked for -- see the long
+ * note over destination() in push.js. What this has to get right is the same
+ * thing every other verb here gets right: the number on screen was read some
+ * seconds ago, and some seconds is enough. */
+Sitting.prototype.doPush = function (repo) {
+  if (!repo) { this.notice = 'no repo to push'; return; }
+  var rec;
+  try { rec = TK.readRepo(repo.dir, Date.now()); }
+  catch (e) { this.notice = 'could not read the repo: ' + e.message; return; }
+
+  var res;
+  try { res = P.pushUpstream(repo.dir, rec, {}); }
+  catch (e2) { this.notice = e2.message; return; }
+
+  if (res.needsConfirm) {
+    this.pushing = { dir: repo.dir, label: repo.label, dest: res.dest,
+                     ahead: res.ahead, subjects: this.aheadSubjects(repo.dir, res.ahead) };
+    this.view = 'push';
+    this.notice = '';
+    return;
+  }
+  /* Every other answer is a reason, and the reasons are the useful part: a
+   * locked remote, a branch behind its mirror, nothing to send. None of them
+   * is an error and none of them gets a screen of its own. */
+  this.notice = C.chrome(repo.label + ' — ' + res.reason);
+  this.view = 'done';
+};
+
+/* What is actually about to go. A count is a number; the subjects are what
+ * lets somebody recognise whether it is the work they think it is. */
+Sitting.prototype.aheadSubjects = function (dir, n) {
+  try {
+    var got = TK.readLog(dir, { limit: Math.min(n || 1, 8) });
+    return got.commits.map(function (c) { return c.subject; });
+  } catch (e) { return []; }
+};
+
+Sitting.prototype.doPushConfirmed = function () {
+  var pend = this.pushing;
+  if (!pend) return;
+
+  /* The stale-picture contract, in the shape this verb needs it. The screen
+   * says "3 commits"; if a session in another window has committed a fourth
+   * since it was drawn, the sentence somebody agreed to is no longer the
+   * sentence being carried out. Refuse and redraw rather than deciding the
+   * difference was probably fine. */
+  var fresh;
+  try { fresh = TK.readRepo(pend.dir, Date.now()); }
+  catch (e) { this.reportPush({ ok: false, reason: 'could not re-read the repo' }); return; }
+
+  if (fresh.ahead !== pend.ahead) {
+    this.reportPush({ ok: false, reason: 'the repo moved while you were deciding — it ' +
+      'was ' + pend.ahead + ' ahead and is now ' + fresh.ahead });
+    return;
+  }
+
+  var res;
+  try { res = P.pushUpstream(pend.dir, fresh, { confirmed: true }); }
+  catch (e2) { res = { ok: false, reason: e2.message }; }
+  this.reportPush(res, pend);
+};
+
+Sitting.prototype.reportPush = function (res, pend) {
+  var L = [];
+  if (res.ok) {
+    L.push(C.good('pushed ' + res.sent + ' commit' + (res.sent === 1 ? '' : 's') +
+           ' to ' + res.dest.remote));
+    L.push('');
+    L.push('  ' + C.dim(res.dest.url));
+  } else {
+    L.push(C.alert('nothing was pushed — ' + res.reason));
+    /* A hook that refuses said why, and those words are the point of the hook. */
+    if (res.said && res.said.length) {
+      L.push('');
+      res.said.slice(0, 12).forEach(function (line) { L.push('  ' + C.dim(line)); });
+    }
+  }
+  this.notice = L.join('\n  ');
+  this.pushing = null;
+  this.view = 'done';
+};
+
 Sitting.prototype.doCommit = function () {
   var picked = this.selected();
   var msg = this.message.trim() || this.defaultMsg();
@@ -398,6 +512,18 @@ Sitting.prototype.key = function (k) {
     if (k === '\x1b') { this.view = 'files'; this.message = ''; return true; }
     if (k === '\x7f' || k === '\b') { this.message = this.message.slice(0, -1); return true; }
     if (k >= ' ' && k <= '~' && k.length === 1) { this.message += k; return true; }
+    return true;
+  }
+
+  /* Sending is a keypress, not a typed word. Nothing here destroys anything --
+   * the local copy is untouched and the far end only gains commits -- and the
+   * typed word belongs to the one operation that does destroy work. Spending it
+   * here would be the confirmation-you-click-through failure undo.js names. */
+  if (v === 'push') {
+    if (k === '\x1b' || k === 'q') { this.view = this.repo ? 'files' : 'repos';
+                                     this.pushing = null; this.notice = ''; return true; }
+    if (k === '\x03') return false;
+    if (k === '\r' || k === '\n') { this.doPushConfirmed(); return true; }
     return true;
   }
 
@@ -451,6 +577,10 @@ Sitting.prototype.key = function (k) {
   if (k === 'r') { this.notice = ''; if (v === 'repos') this.refresh(); else this.reopen(); return true; }
   if (k === 'l') {
     this.openLog(v === 'repos' ? this.repos[this.cursor] : this.repo);
+    return true;
+  }
+  if (k === 'p') {
+    this.doPush(v === 'repos' ? this.repos[this.cursor] : this.repo);
     return true;
   }
 
