@@ -19,7 +19,7 @@ cairn
 | `cairn check` | is every credit still where it was signed |
 | `cairn new "<name>"` | add a session to the register — Trevor assigns these |
 
-**Double-click `Look.bat`** for the roll and **`Test.bat`** for the suite. Not `cairn.js`, which
+**Double-click `Cairn.bat`** for the roll and **`Cairn Test.bat`** for the suite. Not `cairn.js`, which
 Windows hands to Windows Script Host, and not `cairn.cmd`, which runs correctly and then closes
 the window before anybody can read it — that one is the PATH shim, meant to be typed. The folder
 is not on PATH yet; that is one line in the user PATH, the same as Marquee's and Tack's, and it is
@@ -265,8 +265,8 @@ Cairn/
   cairn.js           the reader
   cairn.cmd          the shim, so it is one word instead of a path
   tools/selftest.js  fixture assertions + mutation suite
-  Look.bat           double-click: the roll
-  Test.bat           double-click: the suite
+  Cairn.bat          double-click: the roll
+  Cairn Test.bat     double-click: the suite
 ```
 
 ## Testing
