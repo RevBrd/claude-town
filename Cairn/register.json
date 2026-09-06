@@ -1,0 +1,202 @@
+{
+  "_comment": [
+    "Cairn's register, and the ONLY hand-written list in the project.",
+    "",
+    "It is hand-written because a designation is a speech act, not a fact about",
+    "the filesystem. Trevor assigns one by saying it; nothing on disk knows it",
+    "happened, and no amount of derivation will find a session that never",
+    "committed anything. Everything Cairn does around this file is derived.",
+    "",
+    "THE CENSUS THAT SETTLED THAT. Extracting designations from prose by shape",
+    "found 463 candidates across 175 docs -- Challenge 1, Job 6, Set 2, Day 1,",
+    "Aurora Beam 50, UT 92 -- with the real ones a small minority buried inside.",
+    "Marquee has a scar about exactly this shape of mistake: a grep for authored",
+    "defects flagged 13 of 18 games, reporting the opposite of the truth, and it",
+    "passed every assertion. So designations are DECLARED here or they stay",
+    "unknown. Do not add a cleverer regex.",
+    "",
+    "WHAT EACH FIELD IS FOR",
+    "  designation  the canonical form, always '<Prefix> <number>'.",
+    "  signature    how it actually appears, when that differs. CTown-4 and",
+    "               CTown-5 carry a hyphen because they are among the first ever",
+    "               issued and the format had not settled. Recorded as written,",
+    "               never normalised -- the same reason 041 keeps its name.",
+    "  state        closed (default) | open | never. See below.",
+    "  signed       where this session put its name, as a QUOTE rather than a",
+    "               line number. Cairn checks each quote is still in the file it",
+    "               names, so a credit that gets edited away is reported. Line",
+    "               numbers drift with every edit; a quote only stops matching",
+    "               when the credit itself changes.",
+    "",
+    "THREE STATES, AND WHY 'ABSENT' IS NOT ONE OF THEM",
+    "  open   the session has not finished. CTown 3 is paused waiting on data",
+    "         from outside the tree for a job that belongs to somebody else, and",
+    "         will pick back up. Having no commits yet is work in progress here,",
+    "         not a hole in the record, and the two must never render alike.",
+    "  never  the number does not name anybody and deliberately never will. This",
+    "         row exists so that nobody fills the gap in, and so that nobody",
+    "         renumbers around it. It is the 'assert the deliberate properties'",
+    "         rule from building.md, in data.",
+    "",
+    "SHORTHAND. Inside its own folder a session may sign just '#30'; the folder",
+    "supplies the rest. So Shadowless #30 is Shadowless 30, and a number alone",
+    "is meaningless across collections -- KSP 1 and Shadowless 1 are different",
+    "people. Work done from outside the folder uses the full designation.",
+    "",
+    "WHAT IS NOT IN HERE YET, deliberately. Shadowless has numbered its sessions",
+    "to #33 in LOGBOOK-*.md and GRABHIST-*.md under headings of a rigid shape",
+    "('## #30 -- Opus 5, 29 Aug 2026 (...)'). That is a structured key rather",
+    "than prose, so it can be DERIVED, and transcribing 33 rows by hand here",
+    "would be a second copy that drifts the moment #34 lands. It is pass 2 and",
+    "it is a derivation, not a transcription. The project is also under a",
+    "maintenance freeze, which is a second reason not to reach into it."
+  ],
+
+  "tree": "../../..",
+
+  "collections": [
+    { "id": "ctown",      "name": "Claude Town", "prefix": "CTown",      "repo": "Projects/Claude Town" },
+    { "id": "misc",       "name": "Misc Tools",  "prefix": "Misc",       "repo": "Projects/Misc Tools" },
+    { "id": "codeville",  "name": "Codeville",   "prefix": "Codeville",  "repo": "Projects/Codeville" }
+  ],
+
+  "sessions": [
+    {
+      "designation": "CTown 1",
+      "collection": "ctown",
+      "model": "Opus 4.6",
+      "when": "9 Aug 2026",
+      "left": "Claude Town's own CLAUDE.md — the folder before any of the projects in it",
+      "signed": [
+        { "file": "Projects/Claude Town/CLAUDE.md",
+          "quote": "(Credit for this document - Opus 4.6 CTown-1 8/9/26)" }
+      ],
+      "note": "Predates the repository by eight days; the first commit here is 17 Aug."
+    },
+    {
+      "designation": "CTown 2",
+      "collection": "ctown",
+      "state": "never",
+      "why": "There is no CTown 2 and there will not be one. The number was skipped on the belief that 041 was its natural designation; 041 turned out to have come from Misc Tools, and by then the gap had been left. Nothing is missing here."
+    },
+    {
+      "designation": "CTown 3",
+      "collection": "ctown",
+      "state": "open",
+      "model": "Opus 5",
+      "why": "Paused, waiting on data from outside the tree for a job that belongs to a friend of Trevor's. It will pick back up and commit. No commits yet is unfinished work, not an absent session."
+    },
+    {
+      "designation": "CTown 4",
+      "signature": "CTown-4",
+      "collection": "ctown",
+      "model": "Opus 5",
+      "when": "17 Aug 2026",
+      "left": "Marquee — the derivation layer, the launcher, and the picture house it lives in",
+      "signed": [
+        { "file": "Projects/Claude Town/Marquee/CLAUDE.md",
+          "quote": "Built by **CTown-4** (Opus 5), 17 Aug 2026. Named for the sign, not the building." }
+      ]
+    },
+    {
+      "designation": "CTown 5",
+      "signature": "CTown-5",
+      "collection": "ctown",
+      "model": "Opus 5",
+      "when": "20 Aug 2026",
+      "left": "Mains, and then Marquee's second reader over it — the live catalog",
+      "signed": [
+        { "file": "Projects/Claude Town/Mains/CLAUDE.md",
+          "quote": "Built by **Opus 5 (CTown 5)**, 20 Aug 2026" },
+        { "file": "Projects/Claude Town/Marquee/CLAUDE.md",
+          "quote": "by **CTown-5** (Opus 5), 20 Aug 2026" }
+      ],
+      "note": "Signed twice on one day, in two projects, and it read as two sessions sharing a number until the history was looked at: Mains landed at 19:39 and Marquee's live catalog at 20:25, forty-six minutes later. One session, which built the server and then immediately taught something to use it. The register records that as one because the evidence says so, not because it is tidier."
+    },
+    {
+      "designation": "CTown 6",
+      "collection": "ctown",
+      "model": "Opus 5",
+      "when": "20–24 Aug 2026",
+      "left": "Tack, all of him — the sweep, the pane, the attic, the back door — and Marquee's terminal front door",
+      "signed": [
+        { "file": "Projects/Claude Town/Tack/CLAUDE.md",
+          "quote": "Built by **CTown 6** (Opus 5), 20-24 Aug 2026, with Trevor directing" },
+        { "file": "Projects/Claude Town/Marquee/CLAUDE.md",
+          "quote": "by **CTown 6**\n(Opus 5), 24 Aug 2026, from Trevor's ask for a way to open a work by part of its name" }
+      ],
+      "note": "Also proposed the places-and-critters convention that decides whether a new thing here gets a face."
+    },
+    {
+      "designation": "CTown 7",
+      "collection": "ctown",
+      "model": "Opus 4.7",
+      "when": "24 Aug 2026",
+      "left": "Marquee's first Electron shell, stopped at a clean boundary; and in the Pet, the peek offer line and Tack as a read-only observer",
+      "signed": [
+        { "file": "Projects/Claude Town/Marquee/CLAUDE.md",
+          "quote": "begun by **CTown 7**\n(Opus 4.7), 24 Aug 2026: a bare shell that opened the page in a real window" },
+        { "file": ".claude/Pet/CLAUDE.md",
+          "quote": "Peek offer line, and Tack added as a read-only observer, by **CTown 7** (Opus 4.7)," }
+      ]
+    },
+    {
+      "designation": "CTown 8",
+      "collection": "ctown",
+      "model": "Opus 5",
+      "when": "25 Aug 2026",
+      "left": "Escape past the origin boundary in Marquee's shell; Tack learning to read history; and the Pet committing its own log",
+      "signed": [
+        { "file": "Projects/Claude Town/Marquee/CLAUDE.md",
+          "quote": "by **CTown 8** (Opus 5), 25 Aug 2026. Trevor's call to defer origin" },
+        { "file": "Projects/Claude Town/Tack/CLAUDE.md",
+          "quote": "by **CTown 8** (Opus 5), 25 Aug 2026. Trevor asked for a way to read commit" },
+        { "file": ".claude/Pet/CLAUDE.md",
+          "quote": "Committing its own log, by **CTown 8** (Opus 5), 25 Aug 2026, visiting from `Claude Town`." }
+      ]
+    },
+    {
+      "designation": "CTown 9",
+      "collection": "ctown",
+      "model": "Opus 5",
+      "when": "28 Aug – 5 Sep 2026",
+      "left": "Deleted Marquee's second room-name list; repointed Tack's puzzled face at a state that can mean something; rebuilt the Pet's peek so it stopped being the exit; and built Cairn",
+      "signed": [
+        { "file": "Projects/Claude Town/Marquee/CLAUDE.md",
+          "quote": "The room-name table removed from it — see *The second list that got in anyway* — by **CTown 9**" },
+        { "file": "Projects/Claude Town/Tack/CLAUDE.md",
+          "quote": "by **CTown 9** (Opus 5), 28 Aug 2026, from Trevor's" },
+        { "file": ".claude/Pet/CLAUDE.md",
+          "quote": "**CTown 9** (Opus 5), 1 Sep 2026, visiting from `Claude Town`." }
+      ],
+      "note": "The first session to put a designation in a commit trailer, on the commit that added this file."
+    },
+
+    {
+      "designation": "Misc 041",
+      "signature": "041",
+      "collection": "misc",
+      "model": "Opus 5",
+      "when": "12–13 Aug 2026",
+      "left": "The thing in the room — Shim: engine, viewer, statusline, and the rules the room is still held to",
+      "signed": [
+        { "file": ".claude/Pet/CLAUDE.md",
+          "quote": "Built by **Opus 5 (041)**, 12–13 Aug 2026, with Trevor directing" },
+        { "file": ".claude/reference/guestbook.md", "quote": "— Opus 5, 041" }
+      ],
+      "note": "PRE-SYSTEM AND SELF-CHOSEN. 041 named itself before designations existed, and came from Misc Tools rather than Claude Town — which is why there is no CTown 2. The canonical form is given a prefix only so it can be addressed alongside the others; the signature is the real name and must never be rewritten. It is the oldest entry here and the only one nobody assigned."
+    },
+    {
+      "designation": "Codeville 5",
+      "collection": "codeville",
+      "model": "Opus 5",
+      "when": "5 Sep 2026",
+      "left": "A tooling pass and the GitHub backup; found where Home was while inventorying repos",
+      "signed": [
+        { "file": "Projects/Codeville/ADMIN-LOG.md",
+          "quote": "## 2026-09-05 — Opus 5 / Codeville 5 (tooling pass)" }
+      ],
+      "note": "The first arrival after the Pet's peek was rebuilt. It looked on one turn and went back to feed Shim on the next, unprompted — the second visitor ever to come twice."
+    }
+  ]
+}
