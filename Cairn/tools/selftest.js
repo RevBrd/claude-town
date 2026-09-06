@@ -215,6 +215,23 @@ function assertions(M) {
   eq(M.whoseCommit('a thing\n\nCommitted by Fixture 2.', known).kind, 'session',
      'the older sentence form is still read');
 
+  /* A trailer is a LINE. Found by pointing Cairn at its own history: the commit
+     that introduced the Session: trailer discusses `Committed with Tack.` in
+     its message, and a substring check read that commit as Trevor's. Every
+     commit message and doc in this tree writes about these conventions, so a
+     substring check makes the tool unable to describe itself. */
+  var talksAbout =
+    'Two things Trevor found.\n\n' +
+    'The signature collided: `Committed by CTown 9.` sits one preposition from\n' +
+    '`Committed with Tack.`, which means Trevor, and `Committed by the room\n' +
+    'itself.` is the Pet.\n\n' +
+    'Session: Fixture 2\n';
+  eq(M.whoseCommit(talksAbout, known).who, 'Fixture 2',
+     'a message that MENTIONS the other trailers mid-sentence is still signed ' +
+     'by its own trailer, not attributed to whoever it quoted');
+  eq(M.whoseCommit('nothing but prose about Committed with Tack. in a line', known).kind,
+     'unclaimed', 'and a mention with no trailer at all claims nobody');
+
   /* The collision that caused the change, from both sides. */
   known['tack 1'] = { designation: 'Tack 1' };
   eq(M.whoseCommit('a thing\n\nCommitted with Tack.', known).kind, 'trevor',
@@ -442,8 +459,14 @@ var MUTANTS = [
    "function squash(s) { return String(s); }"],
 
   ['the room trailer is read as a designation',
-   "  if (body.indexOf(ROOM_TRAILER) >= 0) return { who: 'the room', kind: 'room' };",
+   "  if (ROOM_LINE.test(body)) return { who: 'the room', kind: 'room' };",
    "  if (false) return { who: 'the room', kind: 'room' };"],
+
+  /* Restores the substring check that read the commit explaining attribution as
+     Trevor's, because the message quoted his trailer in a sentence. */
+  ['a trailer is matched anywhere in the body, so a mention counts as a signature',
+   "  if (TACK_LINE.test(body)) return { who: 'Trevor',  kind: 'trevor' };",
+   "  if (body.indexOf(TACK_TRAILER) >= 0) return { who: 'Trevor',  kind: 'trevor' };"],
 
   ['a bare number is resolved by taking the first collection',
    "    return all.filter(function (s) {\n" +

@@ -127,6 +127,24 @@ pattern loose enough to catch a designation catches "the room itself" as one**, 
 commit the Pet ever makes reports as an unknown session, forever. A trailer naming somebody the
 register has never heard of *is* reported — that is a new arrival, not an error.
 
+### A trailer is a whole line, and this tool proved it on itself
+
+The by-value check was `body.indexOf(...)`, a substring search over the whole message. The commit
+that introduced the `Session:` trailer *discusses* `Committed with Tack.` in its own body, in a
+sentence explaining why the two collide — so **Cairn read that commit as Trevor's.** The tool
+misattributed the commit that explains attribution, and the only reason it was caught is that the
+next thing after committing was running `cairn commits` and looking at the top row.
+
+Every trailer is now anchored to a whole line. Measured against the live history afterwards: 14
+commits in Claude Town carry Tack's trailer as its own line, 16 mention the string somewhere, and
+the two extra are both commits explaining the convention. No genuine one lost its attribution and
+two of mine came back.
+
+**The general form:** a trailer is a line, so anything matching it mid-sentence is a mention rather
+than a signature. Every doc and commit message in this tree writes about these conventions
+constantly, so a substring check makes the whole tree unable to describe itself without lying about
+who wrote it. There is a mutant that restores the substring.
+
 ### Why the signature is `Key: value` and not a sentence
 
 It started as `Committed by CTown 9.`, matching the shape of the other two. Trevor found the
@@ -257,7 +275,7 @@ Cairn/
 node tools/selftest.js
 ```
 
-106 assertions, 18 mutants, all caught. Logic runs against a **synthetic register** and synthetic
+108 assertions, 19 mutants, all caught. Logic runs against a **synthetic register** and synthetic
 files in a temp directory, because asserting that CTown 6 built Tack would encode a fact somebody
 may reword tomorrow, and a suite that cries wolf gets deleted. The fixture is one row per hazard:
 a credit that wraps across two lines, a credit that is not in the file it claims, a file that does

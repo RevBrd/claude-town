@@ -155,12 +155,25 @@ function checkSignatures(reg) {
    carry it and rewriting history to tidy that would be worse than reading it. */
 var TACK_TRAILER = 'Committed with Tack.';
 var ROOM_TRAILER = 'Committed by the room itself.';
+
+/* EVERY TRAILER IS MATCHED AS A WHOLE LINE, never as a substring, and this was
+   found by pointing Cairn at its own history. The commit that introduced the
+   `Session:` trailer *discusses* `Committed with Tack.` in its message -- and
+   the by-value check was `body.indexOf(...)`, so Cairn read that commit as
+   Trevor's. A tool that misattributes the commit explaining attribution is
+   about as pointed as a bug gets.
+   The general form: a trailer is a line, so anything that matches it in the
+   middle of a sentence is a mention rather than a signature. Nothing in this
+   tree can write about its own conventions safely otherwise, and the docs and
+   commit messages here write about them constantly. */
+var TACK_LINE    = /^Committed with Tack\.[ \t]*$/m;
+var ROOM_LINE    = /^Committed by the room itself\.[ \t]*$/m;
 var SIGN         = /^Session:[ \t]*(.+?)[ \t]*$/m;
 var LEGACY_SIGN  = /^Committed by (.+?)\.[ \t]*$/m;
 
 function whoseCommit(body, known) {
-  if (body.indexOf(TACK_TRAILER) >= 0) return { who: 'Trevor',  kind: 'trevor' };
-  if (body.indexOf(ROOM_TRAILER) >= 0) return { who: 'the room', kind: 'room' };
+  if (TACK_LINE.test(body)) return { who: 'Trevor',  kind: 'trevor' };
+  if (ROOM_LINE.test(body)) return { who: 'the room', kind: 'room' };
   var m = SIGN.exec(body) || LEGACY_SIGN.exec(body);
   if (m) {
     var name = m[1].trim();
