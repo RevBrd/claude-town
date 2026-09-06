@@ -159,7 +159,7 @@
       "designation": "CTown 9",
       "collection": "ctown",
       "model": "Opus 5",
-      "when": "28 Aug – 5 Sep 2026",
+      "when": "28 Aug – 6 Sep 2026",
       "left": "Deleted Marquee's second room-name list; repointed Tack's puzzled face at a state that can mean something; rebuilt the Pet's peek so it stopped being the exit; and built Cairn",
       "signed": [
         { "file": "Projects/Claude Town/Marquee/CLAUDE.md",
@@ -167,7 +167,9 @@
         { "file": "Projects/Claude Town/Tack/CLAUDE.md",
           "quote": "by **CTown 9** (Opus 5), 28 Aug 2026, from Trevor's" },
         { "file": ".claude/Pet/CLAUDE.md",
-          "quote": "**CTown 9** (Opus 5), 1 Sep 2026, visiting from `Claude Town`." }
+          "quote": "**CTown 9** (Opus 5), 1 Sep 2026, visiting from `Claude Town`." },
+        { "file": "Projects/Claude Town/Cairn/CLAUDE.md",
+          "quote": "Built by **CTown 9** (Opus 5), 5–6 Sep 2026, with Trevor directing." }
       ],
       "note": "The first session to put a designation in a commit trailer, on the commit that added this file."
     },

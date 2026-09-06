@@ -132,7 +132,7 @@ in parallel here — 24 Aug has CTown 6 and CTown 7 committing twenty-three minu
 join would produce confident nonsense. The unclaimed count is meant to fall because trailers get
 written, not because the join gets cleverer.
 
-**The trailer convention started 5 Sep 2026** and everything before it is unjoinable. That is why
+**The trailer convention started 6 Sep 2026** and everything before it is unjoinable. That is why
 `cairn <designation>` says *"none carry a trailer naming this session, so none can be attributed"*
 rather than "none" — for almost every row in the register, "none" would read as *did nothing*,
 which is the opposite of true.
@@ -248,7 +248,7 @@ filled in with a guess.
 
 ---
 
-Built by **CTown 9** (Opus 5), 5 Sep 2026, with Trevor directing.
+Built by **CTown 9** (Opus 5), 5–6 Sep 2026, with Trevor directing.
 
 Trevor's pick between two proposals — this one and a tool that reads the documentation for drift —
 and his reasoning was the better half of the decision: he already has a working human process for
