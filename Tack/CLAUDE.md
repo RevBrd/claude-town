@@ -23,6 +23,7 @@ terminal. Or double-click **`Look.bat`** for the glance and **`Sit.bat`** for th
 | `tack faces` | every shape of him, in every mood |
 | `tack attic` | everything Tack has ever thrown away, and where it is kept |
 | `tack open NAME` | the back door — open a file, or a repo folder, from anywhere in the sweep |
+| `tack install` | what is set up on this machine, and what is not. `--do` makes the changes |
 
 ## The one idea
 
@@ -323,6 +324,94 @@ The one thing it does that Marquee will not: `tack open salient_job1` reaches th
 build. Marquee hides it on purpose, because a launcher offering a discarded draft as though it
 were the game is its worst failure. A back door for looking at things has the opposite job.
 
+## Installing
+
+```bash
+tack install        what is set up, and what is not. Changes nothing.
+tack install --do   make the changes
+```
+
+**This is the first thing in Tack that changes anything outside a git repository**, and it exists
+because of where Trevor wants all of this to end up: a friend who has never seen this tree can be
+handed their own Tack, Marquee, Mains and Cairn, and they work. Copying a folder gets you most of
+the way. The hotkey was the first step that could not be done that way — it needs a line in a file
+that is per-machine, unversioned, and somewhere a beginner has no reason to know about. Every
+remaining setup step has that shape, so the answer is not a hotkey script. It is something that
+**says what it is about to do to your machine, and then does only that**.
+
+### Two rules, both mechanized
+
+**It only ever adds.** The user PATH is appended to and never replaced; the profile is appended to
+and never rewritten. There is no code path that removes either, which keeps the property the rest
+of this file claims: nothing here ends with something gone that was there before. There are mutants
+that turn the PATH append into a replace, and the profile append into an overwrite.
+
+**It reports by default.** `tack install` changes nothing at all; `--do` acts, after printing the
+same list. That is the opposite default from `tack open --dry`, and deliberately: the reader of
+this command is, by assumption, somebody who does not yet know what any of it does.
+
+`MAY_CHANGE` names the two things it may touch, asserted by value like the other allowlists.
+`PATH_SCOPE` is `'User'` — the machine PATH needs administrator rights and changes the machine for
+everybody on it, so there is no argument anywhere that selects a scope, and the selftest asserts
+that the word *Machine* does not appear in the file at all.
+
+### The mistake that is written into the file
+
+The first version of the PATH check ran `reg query HKCU\Environment /v Path` and pulled the value
+out with a regular expression. **The expression did not match, the value came back empty, and the
+check reported "Tack is not on your PATH" with complete confidence — while Tack was sitting on the
+PATH, four entries down.**
+
+Same family as every other scar in this tree: a signal that can be wrong in the direction of *looks
+like it worked*. Worse than usual here, because the fix it invites is to append an entry that is
+already there. The PATH is now read through `[Environment]::GetEnvironmentVariable`, which returns
+the value or null and has no formatting to misread — and **null is its own answer**. A check that
+could not run has not found a problem, and there is a mutant that turns *unknown* into a reason to
+append.
+
+`setx` is the other way to write a PATH and is deliberately not used: it truncates at 1024
+characters without saying so, which on a PATH is a way to silently delete somebody's tools.
+
+### The stale picture, again
+
+The report was drawn from one PATH. If another window edits it in between, appending to the value
+on screen would delete the difference. So the PATH is **re-read at the instant of writing**, and the
+value written is checked to begin with everything that was actually there. Same contract as
+committing, and there is a mutant that writes from the report instead.
+
+Before anything changes, the old profile and the old PATH are copied to **the same attic a
+discarded file goes to** — the PATH as plain text you can paste back. `tack attic` lists it with no
+changes needed, because it already walks `<stamp>/<label>/` and this writes `<stamp>/machine/`.
+
+### The hotkey
+
+`hotkey.ps1` is **tracked, and that is the point.** A PowerShell profile lives in `Documents\`,
+outside every repo here — nothing sweeps it, nothing backs it up, git has never seen it. A handler
+living there would work on this machine, vanish on a rebuild, and leave nothing to look at when it
+did. So the handler is in the repo and the profile carries exactly **one line** that points at it,
+findable again by a marker. That is also what makes the uninstall a sentence rather than a feature:
+delete the line.
+
+The chord is `Alt+t`, declared in `install.json` so that `install.js` and `hotkey.ps1` cannot drift
+into disagreeing about it. **It is deliberately not `Ctrl+L`, which is what was asked about** —
+PSReadLine binds that to `ClearScreen`, a reflex that works in every shell there is, and taking it
+costs more than the hotkey gives. `tack install` reports whether the chord you chose is already
+bound, *before* taking it over rather than after you notice the old key stopped working.
+
+**What it does, and what it deliberately does not.** The chord opens a `tack ` line at your prompt.
+If you had something half-typed, it goes into your history first — one press of Up brings it back.
+The fancier version, a floating prompt that restores your line by itself, needs a hook in the
+`prompt` function, which is a much larger thing to put on somebody's machine for a convenience.
+This uses only documented PSReadLine calls and cannot lose a keystroke, and the fancier one can
+arrive later without changing anything about how it is installed.
+
+### It installs Tack, and only Tack
+
+Marquee and Cairn have the same need and must not be served from here. The reason is the one the
+back door already carries: a thing that reaches into another project couples them, and this is the
+part of the system most likely to be run when something else is broken. **The pattern is meant to
+be copied, not imported.**
+
 ## Reading history
 
 ```bash
@@ -510,12 +599,17 @@ Tack/
   undo.js            the only file that can destroy work. One verb, and the attic
   push.js            the only file that can reach the network. One verb, and a
                      second one it may only ever use to ask a URL
+  install.js         the only file that changes anything outside a repo. It only
+                     ever adds, and reports unless told --do
+  install.json       the chord and the marker, declared once so install.js and
+                     hotkey.ps1 cannot disagree
+  hotkey.ps1         the handler itself, tracked -- the profile only points here
   open.js            the back door -- find a file, refuse to run it, hand it over
   roots.json         the only hand-written list: roots, never repos
   tack.cmd           the shim, so it is one word instead of a path
   Look.bat           double-click: the glance
   Sit.bat            double-click: the pane
-  tools/selftest.js  629 assertions + 137 mutants across all six files
+  tools/selftest.js  671 assertions + 148 mutants across all seven files
 ```
 
 The split is the security model, not tidiness. `tack.js` runs on every glance and has no
@@ -803,5 +897,18 @@ The face on the report screen — the `done` view's own header and mood, the ref
 9 assertions and 5 mutants — by **Tack 1**, the same day, off the oldest item on Trevor's wishlist.
 It is the second time in this file that a wishlist entry about a face turned out to be a bug about
 *when* the face was computed rather than *what* it was computed from.
+
+`tack install` and the hotkey — `install.js`, `install.json`, `hotkey.ps1`, and 42 more assertions
+with 11 more mutants — by **Tack 1**, 6 Sep 2026. It started as Trevor's wishlist note about a
+Ctrl+L command line and turned into something larger on his framing: the aim is that this tree can
+be handed to somebody who did not build it, and a hotkey is simply the first step that copying a
+folder does not cover. The argument that the handler belongs in the repo rather than the profile is
+the one that made it worth building at all — a profile is the one place in this system that nothing
+watches.
+
+Also from this pass: **the `reg query` mistake in the section above is mine, made in this session**,
+and it is in the file because it is the exact failure mode this tree keeps writing down — it
+reported *not installed* about something that was installed, which is the direction that gets acted
+on.
 
 Same convention as the rest of the tree: **if you change something here, add yourself.**

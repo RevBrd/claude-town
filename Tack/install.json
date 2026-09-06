@@ -1,0 +1,9 @@
+{
+  "_note": "Declared, never parsed. install.js and hotkey.ps1 both read the chord from here, so the two cannot drift into disagreeing about which key does what. Same reasoning as roots.json: the thing everybody needs to agree on is written down once.",
+
+  "chord": "Alt+t",
+  "_chord": "Which key opens a tack line. Change it here and re-run `tack install --do`; nothing else needs editing. Ctrl+L is deliberately NOT the default even though it was the one asked about -- PSReadLine binds it to ClearScreen, which is a reflex that works in every shell there is, and taking it costs more than the hotkey gives. `tack install` prints whether the chord you chose is already taken.",
+
+  "marker": "# Tack hotkey -- added by `tack install`. Delete this line to remove it.",
+  "_marker": "The one line added to the PowerShell profile is found again by this exact text, so install can tell 'already there' from 'not there yet' without reading around it. It is never edited in place and never removed automatically."
+}

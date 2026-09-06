@@ -35,13 +35,20 @@ You are free to add to or edit this header and document.
   inexpressible so the Games release hook cannot be bypassed, and the destination taken from the
   branch's upstream rather than typed — which is why it reaches `games-backup` and cannot reach the
   release repo at all, while knowing nothing about Games.
-- **`tack install`** — the shippability item that came out of the hotkey discussion. The handler
-  itself is small; what it needs underneath is a tracked file in Tack's folder plus one line in a
-  PowerShell profile, and something that writes that line while *saying what it is about to do*.
-  Worth having before any of this goes to somebody who did not build it. Note: Ctrl+L is currently
-  ClearScreen in PSReadLine, and there is no profile on this machine yet, so the installer would be
-  creating one.
-- How doable is a hotkey command line for tack that might jump a single line onto the screen to allow for quick commands, such as ctrl + l (or whatever) 'tack open wishlist.md'?
+- ~~**`tack install`** — the shippability item that came out of the hotkey discussion.~~
+  **Built 6 Sep 2026.** `tack install` reports what is set up and changes nothing; `tack install
+  --do` acts. It only ever adds — the PATH is appended to and never replaced, the profile is
+  appended to and never rewritten — and a copy of both goes to the attic first. **Waiting on you to
+  run `--do`**, which is the design rather than an oversight.
+- ~~How doable is a hotkey command line for tack that might jump a single line onto the screen to
+  allow for quick commands, such as ctrl + l (or whatever) 'tack open wishlist.md'?~~
+  **Built 6 Sep 2026, installed when you run `tack install --do`.** The chord is `Alt+t` rather than
+  Ctrl+L: PSReadLine binds Ctrl+L to ClearScreen, which is a reflex that works in every shell there
+  is, and taking it costs more than the hotkey gives. One edit in `Tack/install.json` changes it,
+  and `tack install` tells you if the chord you pick is already bound.
+  It opens a `tack ` line; anything you had half-typed goes into history, so Up brings it back. The
+  floating-prompt version needs a hook in `prompt`, which is a much bigger thing to put on a
+  machine, and can arrive later without changing how it is installed.
 
 
 ## Shim

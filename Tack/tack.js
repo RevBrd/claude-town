@@ -923,6 +923,97 @@ function renderAttic(entries, root, now) {
   return L.map(trimEnd);
 }
 
+/* ---------------------------------------------------------------- install */
+
+/* `tack install` -- what is set up on this machine, and what is not.
+ *
+ * Rendering is here; the looking and the changing are in install.js, the same
+ * split as everything else. Which means the file that runs on every glance
+ * still cannot change anything about your machine.
+ *
+ * IT REPORTS BY DEFAULT AND ACTS ONLY WITH --do. That is the opposite default
+ * from `tack open --dry`, and deliberately: the reader of this command is, by
+ * assumption, somebody who does not yet know what any of it does. */
+function renderInstall(state, thePlan, result) {
+  var L = [''];
+  var mood = thePlan.cannot.length ? 'alert' : (thePlan.todo.length ? 'awake' : 'pleased');
+  var line1, line2;
+
+  if (result) {
+    line1 = C.body('tack') + C.dim(' · ') +
+            (result.failed.length ? C.alert('partly done') : C.good('set up'));
+    line2 = C.dim('nothing was removed, and a copy of what changed is kept');
+  } else if (thePlan.todo.length) {
+    line1 = C.body('tack') + C.dim(' · ') +
+            C.warm(thePlan.todo.length + ' thing' + (thePlan.todo.length === 1 ? '' : 's') +
+                   ' not set up yet');
+    line2 = C.dim('nothing has been changed — this is a report');
+  } else {
+    line1 = C.body('tack') + C.dim(' · ') + C.good('everything is set up');
+    line2 = C.dim('nothing to do');
+  }
+  headBlock(mood, line1, line2).forEach(function (x) { L.push(x); });
+  L.push('');
+
+  thePlan.done.forEach(function (d) {
+    L.push('  ' + C.good('  ok  ') + C.dim(d));
+  });
+
+  if (thePlan.todo.length) {
+    L.push('');
+    L.push('  ' + C.body(result ? 'what changed' : 'what `tack install --do` would change'));
+    L.push('');
+    thePlan.todo.forEach(function (t) {
+      L.push('    ' + C.warm(t.what));
+      L.push('      ' + C.dim(t.detail));
+      L.push('      ' + C.dim(t.why));
+      L.push('');
+    });
+  }
+
+  /* A chord already bound is not a refusal -- rebinding one is a legitimate
+   * thing to want. It is a thing you should be told before it happens rather
+   * than after you notice the old key stopped working. */
+  if (thePlan.chordTaken) {
+    L.push('  ' + C.alert(thePlan.chord + ' is already bound to something else.'));
+    L.push('  ' + C.dim('Installing takes it over. Pick another in Tack/install.json'));
+    L.push('  ' + C.dim('if you would rather keep what it does now.'));
+    L.push('');
+  }
+
+  thePlan.cannot.forEach(function (c) {
+    L.push('  ' + C.alert('  --  ') + C.dim(c));
+  });
+  if (thePlan.cannot.length) L.push('');
+
+  if (result) {
+    result.did.forEach(function (d) { L.push('  ' + C.good('  done  ') + C.dim(d)); });
+    result.failed.forEach(function (f) { L.push('  ' + C.alert('  no    ') + C.dim(f)); });
+    L.push('');
+    if (result.attic && result.attic.saved.length) {
+      L.push('  ' + C.dim('a copy of what was there before is in'));
+      L.push('  ' + C.dim('  ' + result.attic.dir));
+      L.push('');
+    }
+    L.push('  ' + C.body('open a new terminal') + C.dim(' — PATH and profile are read at startup.'));
+    L.push('');
+    L.push('  ' + C.dim('to undo: delete the line marked "added by `tack install`" from'));
+    L.push('  ' + C.dim('  ' + (state.profile || 'your PowerShell profile')));
+    L.push('  ' + C.dim('PATH entries come out through Settings > Environment Variables.'));
+    L.push('  ' + C.dim('Tack does not remove either for you — it only ever adds.'));
+    L.push('');
+  } else if (thePlan.todo.length) {
+    L.push('  ' + C.body('tack install --do') + C.dim('  to make these changes'));
+    L.push('  ' + C.dim('it only ever adds — nothing is replaced and nothing is removed'));
+    L.push('');
+  } else {
+    L.push('  ' + C.dim(state.chord + ' opens a tack line at your prompt.'));
+    L.push('  ' + C.dim('whatever you had typed goes into history — press Up to get it back.'));
+    L.push('');
+  }
+  return L.map(trimEnd);
+}
+
 /* ---------------------------------------------------------------- one-line */
 
 function renderOne(s) {
@@ -1128,11 +1219,13 @@ var HELP = [
   '  tack faces      every shape of him, in every mood',
   '  tack attic      everything Tack has ever thrown away, and where it is',
   '  tack open NAME  open a file, or a repo folder, from anywhere in the sweep',
+  '  tack install    what is set up on this machine, and what is not',
   '  tack --json     the same sweep as data',
   '',
   '  --no-color      plain text',
   '  --shape=NAME    plain | bat | batlite | ascii  (see `tack faces`)',
   '  --dry           with open: say what it would open, and do not open it',
+  '  --do            with install: make the changes. Without it, it only reports',
   '  -n N            with log: how many commits (default ' + T.LOG_LINES + ')',
   '  --days N        with log: only the last N days',
   '  -p              with log HASH: the diff itself',
@@ -1236,6 +1329,23 @@ function main(argv) {
   if (args[0] === 'faces') {
     process.stdout.write(renderFaces().join('\n') + '\n'); return 0;
   }
+  /* Above the sweep: this reports on the machine rather than on the repos, so
+   * ten `git status` calls would be a second spent on an answer nothing prints.
+   * Same reason `open` and `log` sit up here. */
+  if (args[0] === 'install') {
+    var IN = require('./install.js');
+    var st, pl;
+    try { st = IN.inspect({ tackDir: __dirname }); pl = IN.plan(st); }
+    catch (e) { process.stderr.write('\n  tack: ' + e.message + '\n\n'); return 1; }
+    var didIt = null;
+    if (args.indexOf('--do') !== -1) {
+      if (!pl.todo.length) { /* nothing to do; fall through and just report */ }
+      else didIt = IN.apply(st, pl, null, Date.now());
+    }
+    process.stdout.write(renderInstall(st, pl, didIt).join('\n') + '\n');
+    return (pl.cannot.length || (didIt && didIt.failed.length)) ? 1 : 0;
+  }
+
   if (args[0] === 'attic') {
     var U = require('./undo.js');
     process.stdout.write(renderAttic(U.listAttic(), U.atticRoot(), Date.now())
@@ -1314,6 +1424,7 @@ module.exports = {
   sweepLog: sweepLog, findCommit: findCommit, readCommit: readCommit,
   parseLogArgs: parseLogArgs, looksLikeRef: looksLikeRef, runLog: runLog,
   renderLog: renderLog, renderCommit: renderCommit, renderPickCommit: renderPickCommit,
+  renderInstall: renderInstall,
   matchedLabel: matchedLabel,
   paintDiff: paintDiff, countRepos: countRepos, TACK_TRAILER: TACK_TRAILER,
   hasTrailer: hasTrailer,

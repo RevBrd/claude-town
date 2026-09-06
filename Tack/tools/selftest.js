@@ -74,7 +74,7 @@ function rawGit(dir, args) {
 
 /* ------------------------------------------------------------------- suite */
 
-function suite(TK, W, SIT, U, O, P) {
+function suite(TK, W, SIT, U, O, P, IN) {
 
   section('the read-only guarantee');
 
@@ -1763,6 +1763,172 @@ function suite(TK, W, SIT, U, O, P) {
   ok(rep2.indexOf('O O') !== -1, 'and something that failed does not');
   ok(rep2.indexOf('nothing changed') !== -1, 'and says so in the header');
 
+  section('setting the machine up');
+
+  eq(IN.MAY_CHANGE.slice().sort(), ['the PowerShell profile', 'user PATH'],
+     'install may change exactly two things');
+
+  /* The machine PATH needs administrator rights and changes the machine for
+   * everybody on it. There is no argument that selects a scope -- and there is
+   * no occurrence of the word anywhere in the file, which is the strongest form
+   * this can be asserted in. */
+  eq(IN.PATH_SCOPE, 'User', 'and the PATH it touches is the user one');
+  ok(SOURCES['install.js'].indexOf('Machine') === -1,
+     'the machine PATH is not mentioned anywhere in install.js');
+
+  /* Entry by entry, never as a substring: `...\Tack` is a substring of
+   * `...\Tack-old`, which is the bug open.js carries a note about and Mains
+   * learned before either of them. */
+  var somePath = 'C:\\bin;C:\\Users\\x\\Projects\\Tack-old;C:\\Users\\x\\other';
+  ok(!IN.pathHas(somePath, 'C:\\Users\\x\\Projects\\Tack'),
+     'a folder whose name is a prefix of another is not already on the PATH');
+  ok(IN.pathHas(somePath + ';C:\\Users\\x\\Projects\\Tack', 'C:\\Users\\x\\Projects\\Tack'),
+     'and the real one is');
+  ok(IN.pathHas('C:\\bin;C:\\Users\\x\\Projects\\Tack\\', 'C:\\Users\\x\\Projects\\Tack'),
+     'a trailing slash does not hide it');
+  ok(IN.pathHas('C:\\BIN;C:\\USERS\\X\\PROJECTS\\TACK', 'C:\\Users\\x\\Projects\\Tack'),
+     'and neither does the case');
+  eq(IN.pathHas(null, 'C:\\anything'), null,
+     'a PATH that could not be read answers unknown, never no');
+
+  /* A state built by hand, so every branch of plan() is reachable without a
+   * machine underneath it. */
+  function stateWith(over) {
+    var base = { tackDir: 'C:\\T\\Tack', chord: 'Alt+t', marker: '# marker',
+                 node: 'v20', git: 'git version 2.0', userPath: 'C:\\T\\Tack',
+                 onPath: true, profile: 'C:\\U\\p.ps1', profileExists: true,
+                 hotkeyFile: true, hotkeyLinked: true, chordTaken: false };
+    Object.keys(over || {}).forEach(function (k) { base[k] = over[k]; });
+    return base;
+  }
+  function ids(pl) { return pl.todo.map(function (t) { return t.id; }).sort(); }
+
+  eq(ids(IN.plan(stateWith({}))), [], 'a machine that is set up has nothing to do');
+  eq(ids(IN.plan(stateWith({ onPath: false }))), ['path'],
+     'a folder not on the PATH is one thing to do');
+  eq(ids(IN.plan(stateWith({ hotkeyLinked: false }))), ['hotkey'],
+     'a profile without the line is another');
+
+  /* UNKNOWN IS NOT NO. A check that could not run has not found a problem, and
+   * must never turn into an instruction to change something. */
+  eq(ids(IN.plan(stateWith({ onPath: null }))), [],
+     'a PATH that could not be read is not a reason to append to it');
+  ok(IN.plan(stateWith({ onPath: null })).cannot.length,
+     'it is reported as something that could not be checked');
+  ok(IN.plan(stateWith({ git: null })).cannot.length,
+     'and so is a missing git, which install cannot fix for you');
+  ok(IN.plan(stateWith({ hotkeyFile: false })).cannot.length,
+     'and so is a missing hotkey.ps1');
+
+  var creating = IN.plan(stateWith({ hotkeyLinked: false, profileExists: false }));
+  ok(creating.todo[0].what.indexOf('create') !== -1,
+     'a profile that does not exist yet is created, and says so');
+  var appending = IN.plan(stateWith({ hotkeyLinked: false, profileExists: true }));
+  ok(appending.todo[0].what.indexOf('add one line') !== -1,
+     'and one that does is added to, which is a different sentence');
+
+  /* The line that goes on somebody's machine is a pointer at a tracked file. */
+  var theLine = IN.profileLine(stateWith({}));
+  ok(theLine.indexOf('# marker') !== -1, 'the line carries its marker so it can be found again');
+  ok(theLine.indexOf('hotkey.ps1') !== -1, 'and points at the tracked handler');
+  eq(theLine.split('\n').filter(function (l) { return l.trim(); }).length, 2,
+     'and is two lines: the marker, and the dot-source');
+
+  /* Applying, against injected io -- no registry and no Documents folder. */
+  var iroot = tmp('install');
+  var iprof = path.join(iroot, 'profile', 'Microsoft.PowerShell_profile.ps1');
+
+  function fakeIo(startPath) {
+    var held = { value: startPath, writes: 0 };
+    return {
+      held: held,
+      readUserPath: function () { return held.value; },
+      writeUserPath: function (v) { held.value = v; held.writes++; return true; },
+      writeFile: function (f, text) {
+        fs.mkdirSync(path.dirname(f), { recursive: true });
+        fs.appendFileSync(f, text);
+      }
+    };
+  }
+
+  var st1 = stateWith({ tackDir: path.join(iroot, 'Tack'), onPath: false,
+                        hotkeyLinked: false, profileExists: false, profile: iprof,
+                        userPath: 'C:\\bin;C:\\tools' });
+  var io1 = fakeIo('C:\\bin;C:\\tools');
+  var r1 = IN.apply(st1, IN.plan(st1), io1, Date.now());
+  eq(r1.failed, [], 'a clean install reports no failures');
+
+  /* APPEND, NEVER REPLACE. This is the line that could delete somebody's
+   * tools, so it is asserted here as well as guarded in the file. */
+  ok(io1.held.value.indexOf('C:\\bin;C:\\tools') === 0,
+     'the new PATH begins with everything the old one held');
+  ok(IN.pathHas(io1.held.value, st1.tackDir), 'and now has the new folder too');
+  ok(fs.existsSync(iprof), 'the profile is created');
+  ok(normalise(fs.readFileSync(iprof, 'utf8')).indexOf('hotkey.ps1') !== -1,
+     'and carries the line');
+
+  /* Doing it twice changes nothing the second time. */
+  var st2 = IN.inspect({ cfg: { chord: 'Alt+t', marker: '# marker' },
+                         tackDir: st1.tackDir, userPath: io1.held.value,
+                         profile: iprof, chordTaken: false });
+  eq(st2.onPath, true, 'a second look sees the PATH entry');
+  eq(st2.hotkeyLinked, true, 'and the profile line');
+  eq(IN.plan(st2).todo.length, 0, 'so there is nothing left to do');
+  var writesBefore = io1.held.writes;
+  IN.apply(st2, IN.plan(st2), io1, Date.now());
+  eq(io1.held.writes, writesBefore, 'and running it again writes nothing');
+  eq(normalise(fs.readFileSync(iprof, 'utf8')).split('hotkey.ps1').length - 1, 1,
+     'and the profile still has exactly one of the line');
+
+  /* THE STALE PICTURE, in the shape this verb needs it. The report was drawn
+   * from one PATH; if another window has edited it since, appending to the one
+   * on screen would delete the difference. */
+  var st3 = stateWith({ tackDir: path.join(iroot, 'Tack2'), onPath: false,
+                        hotkeyLinked: true, profile: iprof, profileExists: true,
+                        userPath: 'C:\\bin' });
+  var io3 = fakeIo('C:\\bin;C:\\somebody-else-added-this');
+  IN.apply(st3, IN.plan(st3), io3, Date.now());
+  ok(io3.held.value.indexOf('somebody-else-added-this') !== -1,
+     'a PATH edited in another window is not written over');
+  ok(io3.held.value.indexOf('C:\\bin;C:\\somebody-else-added-this') === 0,
+     'the value written begins with what was actually there, not what was drawn');
+
+  /* A PATH that cannot be read is left alone rather than guessed at. */
+  var io4 = fakeIo(null);
+  var st4 = stateWith({ tackDir: path.join(iroot, 'Tack3'), onPath: false,
+                        hotkeyLinked: true, profile: iprof, profileExists: true });
+  var r4 = IN.apply(st4, IN.plan(st4), io4, Date.now());
+  eq(io4.held.writes, 0, 'a PATH that cannot be re-read is not written');
+  ok(r4.failed.length, 'and that is reported rather than passed over');
+
+  /* The attic gets what was there before, in the same place a discarded file
+   * goes, so `tack attic` lists it with no changes needed. */
+  var kept = IN.keepACopy(stateWith({ profile: iprof, profileExists: true,
+                                      userPath: 'C:\\bin;C:\\tools' }), Date.now());
+  eq(kept.error, null, 'the attic copy succeeds');
+  ok(kept.saved.length === 2, 'and holds both the profile and the old PATH');
+  ok(fs.existsSync(path.join(kept.dir, 'user-PATH-before.txt')),
+     'the old PATH is kept as plain text somebody can paste back');
+  ok(normalise(fs.readFileSync(path.join(kept.dir, 'user-PATH-before.txt'), 'utf8'))
+       .indexOf('C:\\bin;C:\\tools') !== -1, 'and it is the value that was there');
+
+  /* realIo appends. The fake one above proves the plan; this proves the thing
+   * that actually runs on somebody's machine does not overwrite their file. */
+  var realFile = path.join(iroot, 'real-append.txt');
+  IN.realIo().writeFile(realFile, 'first\n');
+  IN.realIo().writeFile(realFile, 'second\n');
+  eq(normalise(fs.readFileSync(realFile, 'utf8')), 'first\nsecond\n',
+     'the writer that runs for real appends rather than replaces');
+
+  /* And the report says the things a beginner needs told. */
+  var idraw = TK.renderInstall(st1, IN.plan(stateWith({ onPath: false, hotkeyLinked: false,
+                                                        chordTaken: true })), null).join('\n');
+  ok(idraw.indexOf('nothing has been changed') !== -1,
+     'the default is a report and says so');
+  ok(idraw.indexOf('--do') !== -1, 'and names the flag that acts');
+  ok(idraw.indexOf('already bound') !== -1,
+     'a chord that is already taken is said before it is taken over, not after');
+
 }
 
 /* ---------------------------------------------------------------- mutation */
@@ -2058,6 +2224,54 @@ var MUTANTS_SIT2 = [
 
 /* The back door. Its two rules are "nothing outside the sweep" and "shows
  * files, does not run programs", and every mutant here removes one of them. */
+var MUTANTS_INSTALL = [
+  ['the machine PATH is touched instead of the user one',
+   "var PATH_SCOPE = 'User';",
+   "var PATH_SCOPE = 'Machine';"],
+
+  ['a folder whose name is a prefix of another counts as already installed',
+   "    return path.resolve(e.trim()).replace(/[\\\\\\/]+$/, '').toLowerCase() === want;",
+   "    return path.resolve(e.trim()).toLowerCase().indexOf(want) !== -1;"],
+
+  ['the PATH is replaced rather than appended to',
+   "      next = (next ? next + ';' : '') + state.tackDir;",
+   "      next = state.tackDir;"],
+
+  ['the guard that the new PATH contains the old one is removed',
+   "      if (next.indexOf(current.replace(/;+$/, '')) !== 0) {",
+   "      if (false) {"],
+
+  ['the PATH is written from the report rather than re-read first',
+   "      var current = io.readUserPath();",
+   "      var current = state.userPath;"],
+
+  ['a PATH that could not be read is treated as empty',
+   "      if (current === null) { failed.push('could not re-read your PATH, so it was left alone'); return; }",
+   "      if (current === null) { current = ''; }"],
+
+  ['a PATH that could not be read becomes a reason to append to it',
+   "  if (state.onPath === null) {",
+   "  if (false) {"],
+
+  ['nothing is copied to the attic before the machine is changed',
+   "function keepACopy(state, now) {",
+   "function keepACopy(state, now) { return { dir: null, saved: [], error: null };"],
+
+  ['the profile is overwritten rather than appended to',
+   "      fs.appendFileSync(p, text);",
+   "      fs.writeFileSync(p, text);"],
+
+  ['a profile that does not exist yet is described as one that does',
+   "                what: (state.profileExists ? 'add one line to' : 'create') +",
+   "                what: 'add one line to' + ((0) ? '' : '') +"]
+].map(function (m) { return { file: 'install.js', name: m[0], from: m[1], to: m[2] }; });
+
+var MUTANTS_TACKINSTALL = [
+  ['a chord that is already bound is taken over without saying so',
+   "  if (thePlan.chordTaken) {",
+   "  if (false) {"]
+].map(function (m) { return { file: 'tack.js', name: m[0], from: m[1], to: m[2] }; });
+
 var MUTANTS_PUSH = [
   ['the push verb guard is removed',
    "  assertVerb(args[0]);\n  assertNoReach(args);",
@@ -2372,7 +2586,7 @@ var MUTANTS_SITLOG = [
    "    var cbody = (cm.body || '').split('\\n').filter(function (line) {\n      return line.trim() !== TK.TACK_TRAILER; });",
    "    var cbody = (cm.body || '').split('\\n');"]
 ].map(function (m) { return { file: 'sit.js', name: m[0], from: m[1], to: m[2] }; });
-MUTANTS = MUTANTS.concat(MUTANTS_PUSH, MUTANTS_SITPUSH, MUTANTS_FACE, MUTANTS_WRITE, MUTANTS_SIT, MUTANTS_UNDO, MUTANTS_SIT2,
+MUTANTS = MUTANTS.concat(MUTANTS_INSTALL, MUTANTS_TACKINSTALL, MUTANTS_PUSH, MUTANTS_SITPUSH, MUTANTS_FACE, MUTANTS_WRITE, MUTANTS_SIT, MUTANTS_UNDO, MUTANTS_SIT2,
                          MUTANTS_OPEN, MUTANTS_TACK2, MUTANTS_LOG, MUTANTS_SITLOG,
                          MUTANTS_AGO);
 
@@ -2398,7 +2612,8 @@ var SOURCES = {
   'sit.js':   source('sit.js'),
   'undo.js':  source('undo.js'),
   'open.js':  source('open.js'),
-  'push.js':  source('push.js')
+  'push.js':  source('push.js'),
+  'install.js': source('install.js')
 };
 
 function runMutants() {
@@ -2428,15 +2643,16 @@ function runMutants() {
     try {
       delete require.cache[require.resolve(file)];
       var mutated = require(file);
-      var mods = { TK: TK, W: W, SIT: SIT, U: U, O: O, P: P };
+      var mods = { TK: TK, W: W, SIT: SIT, U: U, O: O, P: P, IN: IN };
       if (m.file === 'tack.js')  mods.TK  = mutated;
       if (m.file === 'write.js') mods.W   = mutated;
       if (m.file === 'sit.js')   mods.SIT = mutated;
       if (m.file === 'undo.js')  mods.U   = mutated;
       if (m.file === 'open.js')  mods.O   = mutated;
       if (m.file === 'push.js')  mods.P   = mutated;
+      if (m.file === 'install.js') mods.IN = mutated;
       var hush = console.log; console.log = function () {};
-      try { suite(mods.TK, mods.W, mods.SIT, mods.U, mods.O, mods.P); } finally { console.log = hush; }
+      try { suite(mods.TK, mods.W, mods.SIT, mods.U, mods.O, mods.P, mods.IN); } finally { console.log = hush; }
       died = fail > before.fail;
     } catch (e) {
       died = true; /* a mutant that crashes the suite is caught, loudly */
@@ -2473,8 +2689,9 @@ var SIT = require(path.join(ROOT, 'sit.js'));
 var U   = require(path.join(ROOT, 'undo.js'));
 var O   = require(path.join(ROOT, 'open.js'));
 var P   = require(path.join(ROOT, 'push.js'));
+var IN  = require(path.join(ROOT, 'install.js'));
 TK.C.on = false;
-suite(TK, W, SIT, U, O, P);
+suite(TK, W, SIT, U, O, P, IN);
 
 var mut = { escaped: [], skipped: [] };
 if (!NO_MUT) mut = runMutants();
