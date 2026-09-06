@@ -17,10 +17,13 @@ cairn
 | `cairn <designation>` | one session: what it left, where it signed, what it committed |
 | `cairn commits` | the history, and how much of it nobody has claimed |
 | `cairn check` | is every credit still where it was signed |
+| `cairn new "<name>"` | add a session to the register — Trevor assigns these |
 
-Double-click **`Look.bat`** for the roll and **`Test.bat`** for the suite. The folder is not on
-PATH yet — that is one line in the user PATH, the same as Marquee's and Tack's, and it is Trevor's
-to add.
+**Double-click `Look.bat`** for the roll and **`Test.bat`** for the suite. Not `cairn.js`, which
+Windows hands to Windows Script Host, and not `cairn.cmd`, which runs correctly and then closes
+the window before anybody can read it — that one is the PATH shim, meant to be typed. The folder
+is not on PATH yet; that is one line in the user PATH, the same as Marquee's and Tack's, and it is
+Trevor's to add.
 
 ## The one idea
 
@@ -113,24 +116,88 @@ update the register's quote in the same commit. If it vanished, put it back.
 
 ## Which commits are whose
 
-Three trailers exist in this tree, and all three are matched **by value** rather than by pattern:
-
 | trailer | means |
 |---|---|
 | `Committed with Tack.` | Trevor — written by `Tack/write.js` |
 | `Committed by the room itself.` | the Pet, committing its own log |
-| `Committed by <designation>.` | that session |
+| `Session: CTown 9` | that session |
 
-The by-value rule is load-bearing rather than fussy: **a pattern loose enough to catch a
-designation catches "the room itself" as one**, and then every commit the Pet ever makes reports as
-an unknown session, forever. A trailer naming somebody the register has never heard of *is*
-reported — that is a new arrival, not an error.
+The two tool trailers are matched **by value**, and that is load-bearing rather than fussy: **a
+pattern loose enough to catch a designation catches "the room itself" as one**, and then every
+commit the Pet ever makes reports as an unknown session, forever. A trailer naming somebody the
+register has never heard of *is* reported — that is a new arrival, not an error.
+
+### Why the signature is `Key: value` and not a sentence
+
+It started as `Committed by CTown 9.`, matching the shape of the other two. Trevor found the
+collision the same day: **`Committed by Tack 1.` sits one preposition from `Committed with Tack.`,
+which means Trevor.** Tack 1 is a real session — a Tack-exclusive one for limited-scope jobs — so
+that is not a hypothetical, and it lands on the one designation where the two strings are about
+the same word.
+
+A regex can tell them apart. A person scanning a log at a glance cannot, reliably, and the log is
+read by people far more often than by Cairn. So the signature became **structurally** different
+rather than lexically: `Session:` is a git trailer of the same shape as the `Co-Authored-By:`
+already at the bottom of these messages, it cannot be misread as prose, and it stacks with other
+trailers underneath it.
+
+**The sentence form is still recognised** — three commits on 6 Sep 2026 carry it, and rewriting
+history to tidy that up would be worse than reading it. There is a mutant that drops the new form
+and keeps only the old.
+
+**The designation does not go in the subject line.** That was the other candidate, and the subject
+is the one line every narrow view shows — Tack's log clips it, `git log --oneline` is nothing else.
+Identity there costs the reader content on every line forever, to answer a question they ask
+rarely. The subject's existing `Marquee:` / `Wishlist:` / `Shadowless:` prefix says *what was worked
+on*, which is a different and more useful thing, and it should keep that space.
 
 **Nothing is ever attributed by date.** A commit landing on a session's exact date, in that
 session's own collection, is still unclaimed, and there is an assertion that says so. Sessions run
 in parallel here — 24 Aug has CTown 6 and CTown 7 committing twenty-three minutes apart — so a date
 join would produce confident nonsense. The unclaimed count is meant to fall because trailers get
 written, not because the join gets cleverer.
+
+## A repo is not a collection
+
+The first version conflated them, and it was a bug rather than a missing feature. **A collection is
+a designation prefix; a repo is a git history**, and several collections share one:
+
+- Every game in `Projects/Games` names itself — `Shadowless 30`, `GemTD 1` — rather than taking the
+  folder name, so twenty collections sit in one repo.
+- `Tack 1` is a Claude Town *repo* session that is not a CTown at all. It is the first designation
+  whose collection is a project inside a repo rather than a folder in `Projects/`, and it is what
+  forced this apart.
+
+Conflating them meant the history was walked once **per collection**, so a shared repo was read
+twenty times and every commit in it counted twenty times — a number that would have looked entirely
+plausible and been wrong by a factor invisible from the output. The walk is now per repo, with a
+mutant that puts it back.
+
+## Adding one
+
+```bash
+cairn new "Tack 1" --model "Opus 5" --why "what it is here for"
+```
+
+**The only thing Cairn writes, and it writes only the register.** That is not a hole in *Cairn is a
+reader*: the register is Trevor's declaration and he is its author, so this is a safer editor than
+a text editor — a trailing comma in JSON turns the roll into an error message, and the person who
+assigns designations should not have to think about commas.
+
+An unknown prefix will not guess a repo. It refuses, lists the repos it knows, and shows the exact
+command with `--repo` filled in, because the person running this is the one person here who is not
+reading the source. (There is an assertion on the *message*, not just on the refusal — a bare
+"did it throw" could not tell the guidance apart from `no repo called undefined`.)
+
+**A new session is born `open`**, always. That is the honest state rather than a placeholder: a
+session that has just been given a designation has not finished. The alternative was an empty
+`closed` row, which would have claimed the session was done and had left nothing — precisely the
+reading `open` exists to prevent. Fill in `left` and `when` when there is something to record, and
+drop the `state` line to close it.
+
+Writing rewrites the file, so the hand-alignment in `register.json` is normalised away. That is a
+real cost and the right trade: a surgical text insert into JSON is the kind of thing that works for
+a year and then eats a file. The `_comment` blocks are data and survive.
 
 **The trailer convention started 6 Sep 2026** and everything before it is unjoinable. That is why
 `cairn <designation>` says *"none carry a trailer naming this session, so none can be attributed"*
@@ -176,7 +243,7 @@ resolved by taking the first hit.
 ```
 Cairn/
   CLAUDE.md          this file
-  register.json      the ONLY hand-written list: who exists, and where they signed
+  register.json      the ONLY hand-written list: repos, collections, sessions
   cairn.js           the reader
   cairn.cmd          the shim, so it is one word instead of a path
   tools/selftest.js  fixture assertions + mutation suite
@@ -190,7 +257,7 @@ Cairn/
 node tools/selftest.js
 ```
 
-83 assertions, 13 mutants, all caught. Logic runs against a **synthetic register** and synthetic
+106 assertions, 18 mutants, all caught. Logic runs against a **synthetic register** and synthetic
 files in a temp directory, because asserting that CTown 6 built Tack would encode a fact somebody
 may reword tomorrow, and a suite that cries wolf gets deleted. The fixture is one row per hazard:
 a credit that wraps across two lines, a credit that is not in the file it claims, a file that does

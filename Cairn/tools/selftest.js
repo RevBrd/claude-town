@@ -48,6 +48,16 @@ function throws(fn, what) {
   try { fn(); ok(false, what + '   (it did not throw)'); }
   catch (e) { ok(true, what); }
 }
+/* Refusing is half the job; saying what to do instead is the other half, and
+   only this form tests it. `cairn new` is run by the person who assigns
+   designations rather than by anybody who reads the source, so "no repo called
+   undefined" and "say which repo and Cairn will declare it" are not the same
+   outcome — and a bare `throws` cannot tell them apart. */
+function throwsWith(fn, re, what) {
+  try { fn(); ok(false, what + '   (it did not throw)'); }
+  catch (e) { ok(re.test(e.message), what + (re.test(e.message) ? '' :
+    '   message was: ' + JSON.stringify(e.message))); }
+}
 function section(s) { if (!QUIET) console.log('\n' + s); }
 
 /* ---------------------------------------------------------------- fixtures */
@@ -71,9 +81,17 @@ write('docs/empty.md', 'This file mentions nobody at all.\n');
 
 var FIXTURE = {
   tree: '.',
+  repos: [
+    { id: 'ra', name: 'Repo A', path: 'repo-a' },
+    { id: 'rb', name: 'Repo B', path: 'repo-b' }
+  ],
   collections: [
-    { id: 'alpha', name: 'Alpha', prefix: 'Fixture', repo: 'repo-a' },
-    { id: 'beta',  name: 'Beta',  prefix: 'Beta',    repo: 'repo-b' }
+    { id: 'alpha', name: 'Alpha', prefix: 'Fixture', repo: 'ra' },
+    { id: 'beta',  name: 'Beta',  prefix: 'Beta',    repo: 'rb' },
+    /* Two collections in ONE repo — the shape every game in Projects/Games has,
+       and the shape Tack 1 has inside Claude Town. The hazard is that a
+       per-collection walk reads that history twice and counts it twice. */
+    { id: 'gamma', name: 'Gamma', prefix: 'Gamma',   repo: 'ra' }
   ],
   sessions: [
     { designation: 'Fixture 1', collection: 'alpha', model: 'Opus 4.6', when: '1 Jan 2027',
@@ -93,7 +111,9 @@ var FIXTURE = {
     { designation: 'Beta 5', collection: 'beta', model: 'Opus 5', when: 'x', left: 'z' },
     { designation: 'Alpha 041', signature: '041', collection: 'alpha', model: 'Opus 5',
       when: 'long ago', left: 'named itself',
-      signed: [{ file: 'docs/empty.md', quote: 'a credit that was never in this file' }] }
+      signed: [{ file: 'docs/empty.md', quote: 'a credit that was never in this file' }] },
+    { designation: 'Gamma 1', collection: 'gamma', model: 'Opus 5', when: 'x',
+      left: 'work in a repo somebody else also has a prefix in' }
   ]
 };
 
@@ -130,13 +150,19 @@ function assertions(M) {
   section('the register is validated, not trusted');
 
   var reg = atTmp(fixtureRegister(M));
-  ok(reg.sessions.length === 8, 'the fixture register loads (' + reg.sessions.length + ')');
+  ok(reg.sessions.length === 9, 'the fixture register loads (' + reg.sessions.length + ')');
   eq(reg.sessions[0].state, 'closed', 'a session with no state is closed');
   eq(reg.sessions[2].state, 'never', 'a declared state survives loading');
 
   throws(function () {
     fixtureRegister(M, function (r) { r.sessions[0].collection = 'nope'; });
   }, 'a session naming an undeclared collection is refused by name');
+  throws(function () {
+    fixtureRegister(M, function (r) { r.collections[0].repo = 'nope'; });
+  }, 'and a collection naming an undeclared repo');
+  throws(function () {
+    fixtureRegister(M, function (r) { r.repos.push({ id: 'ra', path: 'x' }); });
+  }, 'and two repos sharing an id, which would silently drop one history');
   throws(function () {
     fixtureRegister(M, function (r) { delete r.sessions[0].designation; });
   }, 'and a session with no designation at all');
@@ -177,8 +203,24 @@ function assertions(M) {
      'and is NOT read as a session called "the room itself"');
 
   known['fixture 2'] = reg.sessions[1];
+  eq(M.whoseCommit('a thing\n\nSession: Fixture 2', known).kind, 'session',
+     'the Session: trailer names a session in the register');
+  eq(M.whoseCommit('a thing\n\nSession: Fixture 2\nCo-Authored-By: someone', known).who,
+     'Fixture 2', 'and reads it with other trailers stacked underneath');
+
+  /* The sentence form the convention started with, kept because three commits
+     on 6 Sep 2026 carry it and rewriting history to tidy that would be worse
+     than reading it. It was replaced because `Committed by Tack 1.` sits one
+     preposition from `Committed with Tack.`, which means Trevor. */
   eq(M.whoseCommit('a thing\n\nCommitted by Fixture 2.', known).kind, 'session',
-     'a trailer naming a session in the register is that session');
+     'the older sentence form is still read');
+
+  /* The collision that caused the change, from both sides. */
+  known['tack 1'] = { designation: 'Tack 1' };
+  eq(M.whoseCommit('a thing\n\nCommitted with Tack.', known).kind, 'trevor',
+     "Tack's own trailer still means Trevor even with a Tack 1 in the register");
+  eq(M.whoseCommit('a thing\n\nSession: Tack 1', known).who, 'Tack 1',
+     'and Tack 1 signing is Tack 1, not Trevor');
   eq(M.whoseCommit('a thing\n\nCommitted by Somebody 12.', known).kind, 'unknown',
      'a trailer naming somebody unknown is reported, not dropped');
   eq(M.whoseCommit('a thing with no trailer at all', known).kind, 'unclaimed',
@@ -201,7 +243,11 @@ function assertions(M) {
     ]
   });
   var hist = M.history(reg, { git: git });
-  eq(hist.length, 4, 'every commit in every collection is read');
+  eq(hist.length, 4, 'every commit in every repo is read');
+  /* Alpha and Gamma both live in repo-a. Walking per collection would read it
+     twice and report six commits where there are four. */
+  eq(hist.filter(function (h) { return h.repo && h.repo.id === 'ra'; }).length, 3,
+     'a repo two collections share is read ONCE, not once per collection');
   eq(hist.map(function (h) { return h.date; }),
      ['2027-03-03', '2027-02-02', '2027-01-02', '2027-01-01'],
      'newest first, merged across collections');
@@ -260,8 +306,12 @@ function assertions(M) {
 
   /* The count excludes a number that names nobody. Counting it would report
      one more session than has ever existed. */
-  ok(/7 have come through/.test(roll),
-     'the head counts sessions, not rows — a "never" is not a person');
+  /* Computed from the fixture rather than typed, so adding a row to the fixture
+     does not fail an assertion about a rule the row has nothing to do with. */
+  var people = reg.sessions.filter(function (s) { return s.state !== 'never'; }).length;
+  ok(new RegExp(people + ' have come through').test(roll),
+     'the head counts sessions, not rows — a "never" is not a person (' + people + ')');
+  ok(people < reg.sessions.length, 'and the fixture has a "never" for that to be about');
   ok(/1 still open/.test(roll), 'and says how many have not finished');
 
   section('one session, and what it is careful not to say');
@@ -303,6 +353,49 @@ function assertions(M) {
   ok(/not where they were signed/.test(chk), 'the check reports what moved');
   ok(chk.indexOf('a credit that was never in this file') !== -1,
      'and quotes what it was looking for, so it can be found by hand');
+
+  section('adding one — the only thing Cairn writes');
+
+  eq(M.splitDesignation('Tack 1').canonical, 'Tack 1', 'a designation splits into prefix + number');
+  eq(M.splitDesignation('CTown-5').canonical, 'CTown 5', 'and a hyphen is the same separator');
+  eq(M.splitDesignation('nonsense'), null, 'something with no number is not a designation');
+
+  var regFile = path.join(TMP, 'add.json');
+  var fresh = function () {
+    fs.writeFileSync(regFile, JSON.stringify(FIXTURE, null, 2));
+    return M.loadRegister(regFile);
+  };
+
+  var r1 = fresh();
+  var made = M.addSession(r1, 'Fixture 9', { model: 'Opus 5' }, regFile);
+  eq(made.row.designation, 'Fixture 9', 'a new session lands under its own prefix');
+  eq(made.row.state, 'open',
+     'and is born OPEN — a session just given a name has not finished, and an ' +
+     'empty closed row would claim it was done and had left nothing');
+  eq(made.madeCollection, false, 'an existing prefix does not make a second collection');
+  ok(M.loadRegister(regFile).sessions.some(function (s) { return s.designation === 'Fixture 9'; }),
+     'and it is there when the register is read back');
+
+  fresh();
+  throws(function () { M.addSession(null, 'Fixture 1', {}, regFile); },
+    'a designation already in the register is refused, never overwritten');
+  fresh();
+  throws(function () { M.addSession(null, 'not a designation', {}, regFile); },
+    'and something that is not a designation at all');
+
+  fresh();
+  throwsWith(function () { M.addSession(null, 'Brandnew 1', {}, regFile); },
+    /no collection uses the prefix "Brandnew"[\s\S]*--repo/,
+    'an unknown prefix will not guess a repo, and says how to tell it which');
+  throwsWith(function () { M.addSession(null, 'Brandnew 1', {}, regFile); },
+    /\bra\b/, 'listing the repos it does know, so the answer is on screen');
+  fresh();
+  var newColl = M.addSession(null, 'Brandnew 1', { repo: 'ra' }, regFile);
+  eq(newColl.madeCollection, true, 'but declares the collection when told which repo');
+  eq(newColl.collection.repo, 'ra', 'pointed at that repo');
+  fresh();
+  throws(function () { M.addSession(null, 'Brandnew 1', { repo: 'nope' }, regFile); },
+    'and a repo that does not exist is refused rather than invented');
 
   section('the real register');
 
@@ -400,9 +493,34 @@ var MUTANTS = [
    "      if (cache[abs] === null)                         rec.status = 'no-file';",
    "      if (cache[abs] === null)                         rec.status = 'gone';"],
 
-  ['a collection whose repo cannot be read is skipped quietly',
-   "      out.push({ coll: c, error: e.message });",
+  ['a repo that cannot be read is skipped quietly',
+   "      out.push({ repo: p, error: e.message });",
    '      /* skipped */'],
+
+  /* The bug the repo/collection split exists to prevent: twenty games share
+     Projects/Games, and walking per collection reads that history once per
+     game and counts every commit in it that many times. */
+  ['the history is walked per collection, so a shared repo is counted twice',
+   '  (reg.repos || []).forEach(function (p) {\n' +
+   '    var repo = path.join(root, p.path), raw;',
+   '  (reg.collections || []).forEach(function (p) {\n' +
+   '    var repo = path.join(root, p.repoRef.path), raw;'],
+
+  ['the Session: trailer is not recognised, only the older sentence form',
+   '  var m = SIGN.exec(body) || LEGACY_SIGN.exec(body);',
+   '  var m = LEGACY_SIGN.exec(body);'],
+
+  ['adding a designation overwrites one already in the register',
+   "  if (clash.length) throw new Error(parts.canonical + ' is already in the register.');",
+   '  if (false) { }'],
+
+  ['a new session is written as finished rather than open',
+   "  var row = { designation: parts.canonical, collection: coll.id, state: 'open' };",
+   "  var row = { designation: parts.canonical, collection: coll.id, state: 'closed' };"],
+
+  ['an unknown prefix invents a collection without being told the repo',
+   "    if (!opts.repo) {",
+   '    if (false) {'],
 
   ['an open session is drawn as though it had finished',
    "  if (s.state === 'open')  return 'open';",

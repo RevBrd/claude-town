@@ -54,10 +54,37 @@
 
   "tree": "../../..",
 
+  "_repos": [
+    "A REPO IS NOT A COLLECTION, and the first version of this file assumed",
+    "they were the same thing. A collection is a designation PREFIX; a repo is",
+    "a git history. Several collections share one: every game in Projects/Games",
+    "names itself -- Shadowless 30, GemTD 1 -- rather than taking the folder",
+    "name, and Tack 1 is a Claude Town repo session that is not a CTown.",
+    "",
+    "Conflating them read each shared history once per collection and counted",
+    "every commit in it that many times, which would have looked plausible and",
+    "been wrong by a factor nobody could see from the output."
+  ],
+  "repos": [
+    { "id": "ctown",     "name": "Claude Town", "path": "Projects/Claude Town" },
+    { "id": "games",     "name": "Games",       "path": "Projects/Games" },
+    { "id": "misc",      "name": "Misc Tools",  "path": "Projects/Misc Tools" },
+    { "id": "codeville", "name": "Codeville",   "path": "Projects/Codeville" },
+    { "id": "ksp",       "name": "KSP Tools",   "path": "Projects/KSP Tools" }
+  ],
+
+  "_collections": [
+    "One per designation prefix. `prefix` is what the shorthand expands to: a",
+    "session signing '#30' inside Shadowless is Shadowless 30. Adding one costs",
+    "a row here and a row in sessions -- or `cairn new`, which writes both."
+  ],
   "collections": [
-    { "id": "ctown",      "name": "Claude Town", "prefix": "CTown",      "repo": "Projects/Claude Town" },
-    { "id": "misc",       "name": "Misc Tools",  "prefix": "Misc",       "repo": "Projects/Misc Tools" },
-    { "id": "codeville",  "name": "Codeville",   "prefix": "Codeville",  "repo": "Projects/Codeville" }
+    { "id": "ctown",      "name": "Claude Town", "prefix": "CTown",      "repo": "ctown" },
+    { "id": "tack",       "name": "Tack",        "prefix": "Tack",       "repo": "ctown" },
+    { "id": "misc",       "name": "Misc Tools",  "prefix": "Misc",       "repo": "misc" },
+    { "id": "codeville",  "name": "Codeville",   "prefix": "Codeville",  "repo": "codeville" },
+    { "id": "shadowless", "name": "Shadowless",  "prefix": "Shadowless", "repo": "games" },
+    { "id": "ksp",        "name": "KSP Tools",   "prefix": "KSP",        "repo": "ksp" }
   ],
 
   "sessions": [
@@ -174,6 +201,14 @@
       "note": "The first session to put a designation in a commit trailer, on the commit that added this file."
     },
 
+    {
+      "designation": "Tack 1",
+      "collection": "tack",
+      "state": "open",
+      "model": "Opus 5",
+      "why": "A Tack-exclusive session for limited-scope jobs as they come up, rather than one defined project. Running in parallel with CTown 9 on 6 Sep 2026. The first designation in this tree whose collection is not a folder in Projects/ — Tack is a project inside the Claude Town repo, which is what made the repo/collection split necessary rather than tidy.",
+      "note": "It is also the reason the signature trailer is `Session:` rather than a sentence. `Committed by Tack 1.` sits one preposition from `Committed with Tack.`, which means Trevor, and no one should have to make that distinction at a glance in a log."
+    },
     {
       "designation": "Misc 041",
       "signature": "041",

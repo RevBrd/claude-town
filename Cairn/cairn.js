@@ -64,8 +64,29 @@ function loadRegister(file) {
   try { r = JSON.parse(raw); }
   catch (e) { throw new Error('the register is not valid JSON: ' + e.message); }
 
+  /* REPOS AND COLLECTIONS ARE NOT THE SAME THING, and conflating them was the
+     first version's real bug rather than a missing feature. A collection is a
+     designation prefix -- Shadowless, GemTD, Tack -- and several of them live
+     in one repository: every game in `Projects/Games` names itself, and Tack 1
+     is a Claude Town repo session that is not a CTown. Logging per collection
+     would have read the Games history twenty times over and counted every
+     commit in it twenty times. */
+  var repoById = {};
+  (r.repos || []).forEach(function (p) {
+    if (!p.id || !p.path) throw new Error('a repo in the register has no id or path');
+    if (repoById[p.id]) throw new Error('two repos share the id ' + p.id);
+    repoById[p.id] = p;
+  });
+
   var byId = {};
-  (r.collections || []).forEach(function (c) { byId[c.id] = c; });
+  (r.collections || []).forEach(function (c) {
+    if (!repoById[c.repo]) {
+      throw new Error('collection ' + c.id + ' names a repo the register does not declare: ' +
+                      c.repo);
+    }
+    c.repoRef = repoById[c.repo];
+    byId[c.id] = c;
+  });
 
   (r.sessions || []).forEach(function (s) {
     if (!s.designation) throw new Error('a session in the register has no designation');
@@ -114,20 +135,33 @@ function checkSignatures(reg) {
 
 /* ----------------------------------------------------------------- history */
 
-/* Which commits are whose. Three trailers exist in this tree and all three are
-   matched BY VALUE rather than by pattern, because a pattern loose enough to
-   catch a designation is loose enough to read "the room itself" as one.
-   Anything else after "Committed by " is a claim, and a claim naming somebody
-   the register has never heard of is reported -- that is a new arrival, not an
-   error. */
+/* Which commits are whose. The two tool trailers are matched BY VALUE rather
+   than by pattern, because a pattern loose enough to catch a designation is
+   loose enough to read "the room itself" as one, and then every commit the Pet
+   ever makes reports as an unknown session forever.
+
+   THE SIGNATURE IS A `Key: value` TRAILER, not a sentence, and that shape was
+   chosen after the sentence form collided. The first version was
+   `Committed by CTown 9.`, which sits one preposition away from
+   `Committed with Tack.` -- fine for a regex, and genuinely hard for a person
+   scanning a log, especially for the one designation where the two would be
+   about the same word. Tack 1 is a real session working on Tack; `Committed by
+   Tack 1.` next to `Committed with Tack.` is a distinction nobody should have
+   to make at a glance. `Session:` is structurally different, sits alongside the
+   `Co-Authored-By:` trailer already in these messages, and cannot be misread as
+   prose.
+
+   The sentence form is still recognised, because three commits on 6 Sep 2026
+   carry it and rewriting history to tidy that would be worse than reading it. */
 var TACK_TRAILER = 'Committed with Tack.';
 var ROOM_TRAILER = 'Committed by the room itself.';
-var CLAIM        = /^Committed by (.+?)\.\s*$/m;
+var SIGN         = /^Session:[ \t]*(.+?)[ \t]*$/m;
+var LEGACY_SIGN  = /^Committed by (.+?)\.[ \t]*$/m;
 
 function whoseCommit(body, known) {
   if (body.indexOf(TACK_TRAILER) >= 0) return { who: 'Trevor',  kind: 'trevor' };
   if (body.indexOf(ROOM_TRAILER) >= 0) return { who: 'the room', kind: 'room' };
-  var m = CLAIM.exec(body);
+  var m = SIGN.exec(body) || LEGACY_SIGN.exec(body);
   if (m) {
     var name = m[1].trim();
     return { who: name, kind: known[name.toLowerCase()] ? 'session' : 'unknown' };
@@ -145,20 +179,24 @@ function history(reg, opts) {
     if (s.signature) known[s.signature.toLowerCase()] = s;
   });
 
-  reg.collections.forEach(function (c) {
-    var repo = path.join(root, c.repo), raw;
+  /* Walked per REPO, never per collection. Twenty games share `Projects/Games`,
+     so a per-collection walk would read that history twenty times and count
+     every commit in it twenty times over -- a number that would look plausible
+     and be wrong by a factor nobody could see. */
+  (reg.repos || []).forEach(function (p) {
+    var repo = path.join(root, p.path), raw;
     try {
       raw = (opts.git || gitLog)(repo);
     } catch (e) {
-      out.push({ coll: c, error: e.message });
+      out.push({ repo: p, error: e.message });
       return;
     }
     raw.split(RS).slice(1).forEach(function (rec) {
-      var p = rec.split(US);
-      var body = (p[3] || '');
+      var f = rec.split(US);
+      var body = (f[3] || '');
       var w = whoseCommit(body, known);
-      out.push({ coll: c, hash: (p[0] || '').slice(0, 7), date: p[1] || '',
-                 subject: p[2] || '', who: w.who, kind: w.kind });
+      out.push({ repo: p, hash: (f[0] || '').slice(0, 7), date: f[1] || '',
+                 subject: f[2] || '', who: w.who, kind: w.kind });
     });
   });
   out.sort(function (a, b) { return String(b.date).localeCompare(String(a.date)); });
@@ -280,7 +318,7 @@ function renderRoll(reg, checks, hist) {
   var unclaimed = hist.filter(function (h) { return h.kind === 'unclaimed'; }).length;
   var claimed   = hist.filter(function (h) { return h.kind === 'session'; }).length;
   var commits   = hist.filter(function (h) { return !h.error; }).length;
-  L.push('  ' + C.dim(commits + ' commits across those collections · ') +
+  L.push('  ' + C.dim(commits + ' commits in ' + (reg.repos || []).length + ' repos · ') +
          (unclaimed ? C.warm(unclaimed + ' nobody has claimed') : C.good('all of them claimed')) +
          C.dim(claimed ? ' · ' + claimed + ' signed' : ''));
 
@@ -389,13 +427,13 @@ function renderCommits(hist, reg) {
   L.push('');
 
   hist.forEach(function (h) {
-    if (h.error) { L.push('    ' + C.bad('! ' + h.coll.name + ' — ' + h.error)); return; }
+    if (h.error) { L.push('    ' + C.bad('! ' + h.repo.name + ' — ' + h.error)); return; }
     var who = h.kind === 'unclaimed' ? C.dim('—') :
               h.kind === 'unknown'   ? C.bad(clip(h.who, 14)) :
               h.kind === 'trevor'    ? C.chrome('Trevor') :
               h.kind === 'room'      ? C.chrome('the room') : C.good(clip(h.who, 14));
     L.push('    ' + C.dim(h.date) + ' ' + padVis(who, 15) +
-           padVis(C.dim(clip(h.coll.name, 12)), 14) + C.body(clip(h.subject, 56)));
+           padVis(C.dim(clip(h.repo.name, 12)), 14) + C.body(clip(h.subject, 56)));
   });
   L.push('');
   L.push('  ' + C.dim('a commit is claimed by a `Committed by <designation>.` trailer.'));
@@ -428,12 +466,89 @@ function renderCheck(checks, reg) {
   return L.map(trimEnd);
 }
 
+/* ------------------------------------------------------------------ adding */
+
+/* THE ONE THING CAIRN WRITES, and it writes only the register.
+ *
+ * That is not a hole in "Cairn is a reader". The register is Trevor's
+ * declaration and he is the author of it; this is a safer editor than a text
+ * editor, which is the whole point -- a trailing comma in JSON turns the roll
+ * into an error message, and the person who assigns designations should not
+ * have to think about commas.
+ *
+ * A NEW SESSION IS BORN `open`, always, and that is the honest state rather
+ * than a placeholder: a session that has just been given a designation has not
+ * finished. It gets `left` and `when` when there is something to record. The
+ * alternative was writing an empty closed row, which would have claimed the
+ * session was done and had left nothing -- the exact reading the `open` state
+ * exists to prevent.
+ */
+function splitDesignation(d) {
+  var m = /^\s*(.+?)[ -]+([0-9]+)\s*$/.exec(String(d || ''));
+  if (!m) return null;
+  return { prefix: m[1].trim(), number: m[2], canonical: m[1].trim() + ' ' + m[2] };
+}
+
+function addSession(reg, raw, opts, file) {
+  opts = opts || {};
+  var parts = splitDesignation(raw);
+  if (!parts) {
+    throw new Error('"' + raw + '" is not a designation. It wants a prefix and a ' +
+                    'number, like "Tack 1" or "Shadowless 34".');
+  }
+
+  var doc = JSON.parse(fs.readFileSync(file || REGISTER, 'utf8'));
+
+  var clash = (doc.sessions || []).filter(function (s) {
+    return String(s.designation).toLowerCase() === parts.canonical.toLowerCase();
+  });
+  /* Never overwrite. A designation is somebody, and a second row silently
+     replacing the first would delete a record rather than add one. */
+  if (clash.length) throw new Error(parts.canonical + ' is already in the register.');
+
+  var coll = (doc.collections || []).filter(function (c) {
+    return String(c.prefix).toLowerCase() === parts.prefix.toLowerCase();
+  })[0];
+  var madeCollection = !coll;
+
+  if (!coll) {
+    if (!opts.repo) {
+      throw new Error('no collection uses the prefix "' + parts.prefix + '" yet.\n' +
+        '  Say which repo it belongs to and Cairn will declare it:\n' +
+        '    cairn new "' + parts.canonical + '" --repo <' +
+        (doc.repos || []).map(function (p) { return p.id; }).join('|') + '>');
+    }
+    var repo = (doc.repos || []).filter(function (p) { return p.id === opts.repo; })[0];
+    if (!repo) {
+      throw new Error('no repo called "' + opts.repo + '". The register declares: ' +
+        (doc.repos || []).map(function (p) { return p.id; }).join(', '));
+    }
+    coll = { id: parts.prefix.toLowerCase().replace(/[^a-z0-9]+/g, ''),
+             name: parts.prefix, prefix: parts.prefix, repo: repo.id };
+    doc.collections.push(coll);
+  }
+
+  var row = { designation: parts.canonical, collection: coll.id, state: 'open' };
+  if (opts.model) row.model = opts.model;
+  row.why = opts.why || 'Newly assigned; nothing recorded yet.';
+
+  doc.sessions.push(row);
+  /* The file is rewritten rather than appended to, so the hand-alignment in it
+     is normalised away. That is a real cost and it is the right trade: a
+     surgical text insert into JSON is the kind of thing that works for a year
+     and then eats a file. The comments are data and survive. */
+  fs.writeFileSync(file || REGISTER, JSON.stringify(doc, null, 2) + '\n');
+  return { row: row, collection: coll, madeCollection: madeCollection };
+}
+
 /* --------------------------------------------------------------------- cli */
 
 var HELP = [
   '',
   '  cairn                  who has come through here',
   '  cairn <designation>    one session — what it left, where it signed',
+  '  cairn new "<name>"     add a session to the register — Trevor assigns these',
+  '                           --model <m>  --repo <id>  --why <text>',
   '  cairn commits          the history, and which of it nobody has claimed',
   '  cairn check            is every credit still where it was signed',
   '',
@@ -451,11 +566,44 @@ function main(argv) {
   if (args.indexOf('--help') !== -1 || args.indexOf('-h') !== -1) {
     process.stdout.write(HELP + '\n'); return 0;
   }
-  args = args.filter(function (a) { return a.charAt(0) !== '-'; });
+  /* One pass, consuming `--key value` as a pair. Filtering flags and then
+     hunting for their values afterwards is how a designation that happens to
+     match a model name gets eaten out of the middle of the arguments. */
+  var opts = {}, rest = [];
+  for (var i = 0; i < args.length; i++) {
+    var a = args[i];
+    if (a.charAt(0) !== '-') { rest.push(a); continue; }
+    var key = a.replace(/^--?/, '');
+    if (['model', 'repo', 'why'].indexOf(key) >= 0 &&
+        i + 1 < args.length && args[i + 1].charAt(0) !== '-') {
+      opts[key] = args[++i];
+    }
+  }
+  args = rest;
 
   var reg;
   try { reg = loadRegister(); }
   catch (e) { process.stderr.write('\n  cairn: ' + e.message + '\n\n'); return 1; }
+
+  if (args[0] === 'new') {
+    var wanted = args.slice(1).join(' ');
+    if (!wanted) {
+      process.stderr.write('\n  cairn: say who. `cairn new "Tack 1" --model "Opus 5"`\n\n');
+      return 1;
+    }
+    var made;
+    try { made = addSession(reg, wanted, opts); }
+    catch (e) { process.stderr.write('\n  cairn: ' + e.message + '\n\n'); return 1; }
+    process.stdout.write('\n  ' + C.good('registered ') + C.body(made.row.designation) +
+      C.dim(' · ' + made.collection.name + (made.row.model ? ' · ' + made.row.model : '')) + '\n' +
+      (made.madeCollection
+        ? '  ' + C.dim('and declared the collection "' + made.collection.name +
+                       '", which did not exist yet') + '\n' : '') +
+      '  ' + C.dim('open, because a session that has just been named has not finished.') + '\n' +
+      '  ' + C.dim('fill in `left` and `when` in register.json when there is something') + '\n' +
+      '  ' + C.dim('to record, and drop the `state` line to close it.') + '\n\n');
+    return 0;
+  }
 
   var checks = checkSignatures(reg);
 
@@ -493,6 +641,7 @@ function main(argv) {
 
 module.exports = {
   loadRegister: loadRegister, checkSignatures: checkSignatures, squash: squash,
+  addSession: addSession, splitDesignation: splitDesignation,
   whoseCommit: whoseCommit, history: history, find: find, norm: norm,
   renderRoll: renderRoll, renderOne: renderOne, renderCommits: renderCommits,
   renderCheck: renderCheck, treeRoot: treeRoot, wrap: wrap, C: C, main: main,
